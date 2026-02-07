@@ -1,0 +1,287 @@
+.header {
+  position: fixed;
+  left: 50%;
+  top: 12px;
+  padding: 8px 12px;
+  gap: 8px;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color-fore);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  align-items: center;
+  font-family: sans-serif;
+
+  .logoWrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .title {
+    font-size: 16px;
+    font-weight: bold;
+  }
+
+  .subtitle {
+    color: rgba(white, 0.75);
+    font-style: italic;
+  }
+
+  .content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .button,
+    .button > svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .button {
+      color: white;
+      cursor: pointer;
+      &:hover {
+        color: rgb(150, 186, 222);
+      }
+    }
+  }
+
+  .controlsToggle {
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+  }
+}
+
+.canvasContainer {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+}
+
+.controlsToggleFloating {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+}
+
+.canvas {
+  transform: scale(calc(1 / var(--dpr)));
+  transform-origin: top left;
+  touch-action: none;
+}
+
+.scrollSection {
+  padding: 60px 20px 120px;
+  background: #0c0f16;
+  color: #e9eef7;
+}
+
+.scrollSectionInner {
+  max-width: 820px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.timeline {
+  display: grid;
+  gap: 16px;
+  margin: 12px 0 24px;
+}
+
+.timelineItem {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.simpleList {
+  margin: 8px 0 24px;
+  padding-left: 18px;
+}
+
+.skillGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 16px;
+  margin: 8px 0 24px;
+}
+
+.contactGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 24px;
+  margin-top: 8px;
+}
+
+.heroModel {
+  position: absolute;
+  top: -150px;
+  bottom: 0;
+  right: 0;
+  width: 50%;
+  height: 100%;
+  z-index: 2;
+  background: transparent;
+}
+
+.bgSelect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: -44px;
+  z-index: 2;
+  position: relative;
+
+  .bgSelectItem {
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    border: 1px solid var(--leva-colors-elevation3);
+    border-radius: var(--leva-radii-sm);
+    background-size: cover;
+    overflow: hidden;
+    position: relative;
+
+    &Active {
+      outline: 2px solid var(--leva-colors-accent2);
+    }
+
+    &Overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+
+      .bgSelectItemVideoIcon {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 16px;
+        height: 16px;
+        color: rgba(white, 0.8);
+        filter: drop-shadow(0 1px 1.5px rgba(black, 0.8));
+        transition: opacity 300ms;
+      }
+
+      .bgSelectItemCustomIcon {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0.8);
+        padding: 5px;
+        border-radius: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(white, 0.9);
+        // filter: drop-shadow(0 1px 2px rgba(black, 0.5));
+        background-color: rgba(black, 0.3);
+      }
+    }
+
+    &TypeCustom {
+      --alpha-pattern-size: 20px;
+      --alpha-pattern-color-a: #5b5f6b;
+      --alpha-pattern-color-b: var(--leva-colors-elevation1);
+
+      &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+
+        background-color: var(--alpha-pattern-color-b);
+        background-image:
+          repeating-linear-gradient(
+            45deg,
+            var(--alpha-pattern-color-a) 25%,
+            transparent 25%,
+            transparent 75%,
+            var(--alpha-pattern-color-a) 75%,
+            var(--alpha-pattern-color-a)
+          ),
+          repeating-linear-gradient(
+            45deg,
+            var(--alpha-pattern-color-a) 25%,
+            var(--alpha-pattern-color-b) 25%,
+            var(--alpha-pattern-color-b) 75%,
+            var(--alpha-pattern-color-a) 75%,
+            var(--alpha-pattern-color-a)
+          );
+        background-position:
+          0 0,
+          calc(var(--alpha-pattern-size) / 2) calc(var(--alpha-pattern-size) / 2);
+        background-size: var(--alpha-pattern-size) var(--alpha-pattern-size);
+      }
+    }
+  }
+}
+
+.bgSelectItemVideo,
+.bgSelectItemImg {
+  left: 0;
+  top: 0;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+:global(#root > div[class^='leva-']) {
+  background-color: rgba(0, 11, 36, 0.4);
+  & > div:last-child {
+    background-color: rgba(0, 9, 30, 0.6);
+  }
+}
+:global(div[data-leva-folder='1']) {
+  & > div:first-child {
+    & > svg + div {
+      display: none;
+    }
+
+    &::after {
+      content: var(--i18n-name);
+      display: inline;
+    }
+  }
+
+  & > div:last-child {
+    background-color: transparent;
+  }
+}
