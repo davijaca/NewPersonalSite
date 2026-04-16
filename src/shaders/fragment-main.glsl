@@ -35,6 +35,8 @@ uniform float u_glareHardness;
 uniform float u_glareAngle;
 uniform int u_blurEdge;
 uniform int u_showShape1;
+uniform float u_refViewportWidth;
+uniform float u_refViewportHeight;
 
 uniform int STEP;
 
@@ -97,24 +99,24 @@ float superellipseCornerSDF(vec2 p, float r, float n) {
 }
 
 float roundedRectSDF(vec2 p, vec2 center, float width, float height, float cornerRadius, float n) {
-  // 移动到中心坐标系
+  // Move into centered coordinate space
   p -= center;
 
   float cr = cornerRadius * u_dpr;
 
-  // 计算到矩形边缘的距离
+  // Distance to rectangle edge
   vec2 d = abs(p) - vec2(width * u_dpr, height * u_dpr) * 0.5;
 
-  // 对于边缘区域和角落，我们需要不同的处理
+  // Use separate handling for edges and corners
   float dist;
 
   if (d.x > -cr && d.y > -cr) {
-    // 角落区域
+    // Corner region
     vec2 cornerCenter = sign(p) * (vec2(width * u_dpr, height * u_dpr) * 0.5 - vec2(cr));
     vec2 cornerP = p - cornerCenter;
     dist = superellipseCornerSDF(cornerP, cr, n);
   } else {
-    // 内部和边缘区域
+    // Interior and edge region
     dist = min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
   }
 
@@ -132,40 +134,44 @@ float sdBox(vec2 p, vec2 b) {
 }
 
 float mainSDF(vec2 p1, vec2 p2, vec2 p) {
-  vec2 p1n = p1 + p / u_resolution.y;
+  float refAspect = u_refViewportWidth / u_refViewportHeight;
+  float layoutScale = (u_resolution.y / u_dpr) / u_refViewportHeight;
+  float virtualWidth = refAspect * u_resolution.y;
+  vec2 pAdjusted = p + vec2((virtualWidth - u_resolution.x) * 0.5, 0.0);
+  vec2 p1n = p1 + pAdjusted / u_resolution.y;
   vec2 p2n = p2 + p / u_resolution.y;
 
-  float d1 = u_showShape1 == 1 ? sdDShape(p1n, 100.0 * u_dpr / u_resolution.y) : 1.0;
+  float d1 = u_showShape1 == 1 ? sdDShape(p1n, 100.0 * layoutScale * u_dpr / u_resolution.y) : 1.0; // D letter (base shape)
   float d3 =
     u_showShape1 == 1
       ? sdIsoscelesTriangle(
           vec2(
-            p1n.x - 180.0 * u_dpr / u_resolution.y,
-            -(p1n.y - 100.0 * u_dpr / u_resolution.y)
+            p1n.x - 180.0 * layoutScale * u_dpr / u_resolution.y,
+            -(p1n.y - 100.0 * layoutScale * u_dpr / u_resolution.y)
           ),
-          vec2(70.0, 200.0) * (u_dpr / u_resolution.y)
+          vec2(70.0, 200.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // A letter (triangle)
   float d4 =
     u_showShape1 == 1
       ? sdIsoscelesTriangle(
           vec2(
-            p1n.x - 300.0 * u_dpr / u_resolution.y,
-            p1n.y + 102.0 * u_dpr / u_resolution.y
+            p1n.x - 300.0 * layoutScale * u_dpr / u_resolution.y,
+            p1n.y + 100.0 * layoutScale * u_dpr / u_resolution.y
           ),
-          vec2(70.0, 200.0) * (u_dpr / u_resolution.y)
+          vec2(70.0, 200.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // V letter (triangle)
   float d5 =
     u_showShape1 == 1
       ? sdBox(
           vec2(
-            p1n.x - 430.0 * u_dpr / u_resolution.y,
+            p1n.x - 435.0 * layoutScale * u_dpr / u_resolution.y,
             p1n.y - 0.0 * u_dpr / u_resolution.y
           ),
-          vec2(20.0, 100.0) * (u_dpr / u_resolution.y)
+          vec2(20.0, 100.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // I letter (vertical box)
   // float d2 = sdSuperellipse(p2, 200.0 / u_resolution.y, 4.0).x;
   float d2Radius = min(u_shapeWidth, u_shapeHeight) * 0.125 / u_resolution.y;
   float d2 = sdCircle(p2n, d2Radius);
@@ -174,7 +180,7 @@ float mainSDF(vec2 p1, vec2 p2, vec2 p) {
 }
 
 vec2 getNormal(vec2 p1, vec2 p2, vec2 p) {
-  // 使用场景尺度自适应的 eps
+  // Use scene-scale adaptive epsilon
   vec2 h = vec2(max(abs(dFdx(p.x)), 0.0001), max(abs(dFdy(p.y)), 0.0001));
 
   vec2 grad =
@@ -207,8 +213,8 @@ vec2 getNormal3(vec2 p1, vec2 p2, vec2 p) {
   float eps = 0.0005;
   vec2 e = vec2(eps, 0.0);
 
-  float dx = mainSDF(p1, p2, p + e.xy) - mainSDF(p1, p2, p - e.xy); // ∂f/∂x
-  float dy = mainSDF(p1, p2, p + e.yx) - mainSDF(p1, p2, p - e.yx); // ∂f/∂y
+  float dx = mainSDF(p1, p2, p + e.xy) - mainSDF(p1, p2, p - e.xy); // df/dx
+  float dy = mainSDF(p1, p2, p + e.yx) - mainSDF(p1, p2, p - e.yx); // df/dy
 
   return normalize(vec2(dx, dy));
 }
@@ -366,8 +372,11 @@ vec4 getTextureDispersion(
 
 void main() {
   vec2 u_resolution1x = u_resolution.xy / u_dpr;
-  // center of shape 1
-  vec2 p1 = (vec2(800, 0) - u_resolution.xy * 0.5) / u_resolution.y;
+  float refAspect = u_refViewportWidth / u_refViewportHeight;
+  float layoutScale = u_resolution1x.y / u_refViewportHeight;
+  float virtualWidth = refAspect * u_resolution.y;
+  // center of shape 1 (group anchor for D/A/V/I letters)
+  vec2 p1 = (vec2(630.0 * layoutScale * u_dpr, 0.0) - vec2(virtualWidth * 0.5, u_resolution.y * 0.5)) / u_resolution.y;
   // center of shape 2
   vec2 p2 = (vec2(0, 0) - u_mouseSpring) / u_resolution.y;
   // merged shape
@@ -388,11 +397,11 @@ void main() {
   } else if (STEP <= 1) {
     float px = 2.0 / u_resolution.y;
     vec3 col = merged > 0.0 ? vec3(0.9, 0.6, 0.3) : vec3(0.65, 0.85, 1.0);
-    // 阴影
+    // Shadow
     col *= 1.0 - exp(-0.03 * abs(merged) * u_resolution1x.y);
-    // 等高线
+    // Contour lines
     col *= 0.6 + 0.4 * smoothstep(-0.5, 0.5, cos(0.25 * abs(merged) * u_resolution1x.y * 2.0));
-    // 外层白框
+    // Outer white outline
     col = mix(
       col,
       vec3(1.0),
@@ -454,9 +463,9 @@ void main() {
     // add refaction
   } else if (STEP <= 5) {
     if (merged < 0.0) {
-      outColor = texture(u_blurredBg, v_uv);
+      outColor = texture(u_blurredBg,   v_uv);
     } else {
-      outColor = texture(u_bg, v_uv);
+      outColor = texture(u_bg,   v_uv);
     }
   } else if (STEP <= 6) {
     if (merged < 0.0) {
@@ -473,7 +482,7 @@ void main() {
       }
 
       if (edgeFactor <= 0.0) {
-        outColor = texture(u_blurredBg, v_uv);
+        outColor = texture(u_blurredBg,   v_uv);
       } else {
         vec4 blurredPixel = texture(
           u_blurredBg,
@@ -490,7 +499,7 @@ void main() {
         outColor = blurredPixel;
       }
     } else {
-      outColor = texture(u_bg, v_uv);
+      outColor = texture(u_bg,   v_uv);
     }
     //
   } else if (STEP <= 7) {
@@ -533,7 +542,7 @@ void main() {
       );
 
       if (edgeFactor <= 0.0) {
-        outColor = texture(u_blurredBg, v_uv);
+        outColor = texture(u_blurredBg,   v_uv);
       } else {
         vec4 blurredPixel = texture(
           u_blurredBg,
@@ -552,7 +561,7 @@ void main() {
         // outColor = vec4(vec3(fresnelFactor), 1.0);
       }
     } else {
-      outColor = texture(u_bg, v_uv);
+      outColor = texture(u_bg,   v_uv);
     }
   } else if (STEP <= 8) {
     if (merged < 0.0) {
@@ -590,7 +599,7 @@ void main() {
       );
 
       if (edgeFactor <= 0.0) {
-        outColor = texture(u_blurredBg, v_uv);
+        outColor = texture(u_blurredBg,   v_uv);
         //
         // outColor = mix(
         //   outColor,
@@ -683,7 +692,7 @@ void main() {
       }
 
       if (edgeFactor <= 0.0) {
-        outColor = texture(u_blurredBg, v_uv);
+        outColor = texture(u_blurredBg,   v_uv);
         outColor = mix(outColor, vec4(u_tint.r, u_tint.g, u_tint.b, 1.0), u_tint.a * 0.8);
       } else {
         // height of glass edge:
@@ -785,9 +794,10 @@ void main() {
     }
 
     // smooth
-    outColor = mix(outColor, texture(u_bg, v_uv), smoothstep(-0.001, 0.001, merged));
+    outColor = mix(outColor, texture(u_bg,   v_uv), smoothstep(-0.001, 0.001, merged));
 
   }
 
   fragColor = outColor;
 }
+

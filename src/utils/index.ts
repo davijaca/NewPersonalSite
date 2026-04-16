@@ -7,7 +7,7 @@ export function computeGaussianKernelByRadius(radius: number) {
     kernel.push(weight);
     sum += i === 0 ? weight : weight * 2;
   }
-  return kernel.map(w => w / sum); // 归一化
+  return kernel.map(w => w / sum); // Normalize
 }
 
 export function isChineseLanguage() {
@@ -21,3 +21,4 @@ export function isUzbekLanguage() {
 export function capitalize(str: string) {
   return `${str.charAt(0).toUpperCase()}${str.slice(1)}`;
 }
+

@@ -1,21 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import styles from './App.module.scss';
-import {
-  createEmptyTexture,
-  loadTextureFromURL,
-  MultiPassRenderer,
-  updateVideoTexture,
-} from './utils/GLUtils';
-import VertexShader from './shaders/vertex.glsl?raw';
-import FragmentBgShader from './shaders/fragment-bg.glsl?raw';
-import FragmentBgVblurShader from './shaders/fragment-bg-vblur.glsl?raw';
-import FragmentBgHblurShader from './shaders/fragment-bg-hblur.glsl?raw';
 import FragmentMainShader from './shaders/fragment-main.glsl?raw';
 import { Controller } from '@react-spring/web';
 
 // import { useResizeObserver } from './utils/useResizeOberver';
 import clsx from 'clsx';
 import { capitalize, computeGaussianKernelByRadius } from './utils';
+import FragmentBgShader from './shaders/fragment-bg.glsl?raw';
+import FragmentBgVblurShader from './shaders/fragment-bg-vblur.glsl?raw';
+import FragmentBgHblurShader from './shaders/fragment-bg-hblur.glsl?raw';
 
 import bgGrid from '@/assets/bg-grid.png';
 import bgBars from '@/assets/bg-bars.png';
@@ -28,14 +21,106 @@ import bgBuildings from '@/assets/bg-buildings.png';
 import bgVideoFish from '@/assets/bg-video-fish.mp4';
 import bgVideo2 from '@/assets/bg-video-2.mp4';
 import bgVideo3 from '@/assets/bg-video-3.mp4';
+import bgMoon from '@/assets/bg-moon.mp4';
+import bgStars from '@/assets/bg-stars.mp4';
+
 
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import { useLevaControls } from './Controls';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import gsap from 'gsap';
+
+const ScreenVertexShader = `
+precision highp float;
+in vec3 position;
+out vec2 v_uv;
+void main() {
+  v_uv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(position, 1.0);
+}
+`;
+
+type GlassConfig = {
+  width: number;
+  height: number;
+  radius: number;
+  border: number;
+  alpha: number;
+  lightness: number;
+  blur: number;
+  scale: number;
+  r: number;
+  g: number;
+  b: number;
+  displace: number;
+  frost: number;
+  saturation: number;
+  blend: string;
+  x: 'R' | 'G' | 'B';
+  y: 'R' | 'G' | 'B';
+};
+
+const glassConfig: GlassConfig = {
+  width: 140,
+  height: 140,
+  radius: 70,
+  border: 0.07,
+  alpha: 0.93,
+  lightness: 50,
+  blur: 11,
+  scale: -180,
+  r: 0,
+  g: 10,
+  b: 20,
+  displace: 0,
+  frost: 0,
+  saturation: 1,
+  blend: 'difference',
+  x: 'R',
+  y: 'B',
+};
+
+const buildDisplacementMarkup = (config: GlassConfig) => {
+  const border = Math.min(config.width, config.height) * (config.border * 0.5);
+
+  return `<svg class="displacement-image" viewBox="0 0 ${config.width} ${config.height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="red" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#000"/>
+      <stop offset="100%" stop-color="red"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000"/>
+      <stop offset="100%" stop-color="blue"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="${config.width}" height="${config.height}" fill="black"></rect>
+  <rect x="0" y="0" width="${config.width}" height="${config.height}" rx="${config.radius}" fill="url(#red)" />
+  <rect x="0" y="0" width="${config.width}" height="${config.height}" rx="${config.radius}" fill="url(#blue)" style="mix-blend-mode: ${config.blend}" />
+  <rect x="${border}" y="${Math.min(config.width, config.height) * (config.border * 0.5)}" width="${config.width - border * 2}" height="${config.height - border * 2}" rx="${config.radius}" fill="hsl(0 0% ${config.lightness}% / ${config.alpha})" style="filter:blur(${config.blur}px)" />
+</svg>`;
+};
 
 
 function App() {
+  const baseViewportWidthRef = useRef(window.innerWidth);
+  const baseViewportHeightRef = useRef(window.innerHeight);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrollSectionRef = useRef<HTMLElement>(null);
+  const glassEffectRef = useRef<HTMLDivElement>(null);
+  const displacementDebugRef = useRef<HTMLDivElement>(null);
+  const glassFeImageRef = useRef<SVGFEImageElement>(null);
+  const redChannelRef = useRef<SVGFEDisplacementMapElement>(null);
+  const greenChannelRef = useRef<SVGFEDisplacementMapElement>(null);
+  const blueChannelRef = useRef<SVGFEDisplacementMapElement>(null);
+  const outputBlurRef = useRef<SVGFEGaussianBlurElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const hasFinishedInitialLoad = useRef(false);
   const [canvasInfo, setCanvasInfo] = useState<{ width: number; height: number; dpr: number }>({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -43,7 +128,7 @@ function App() {
   });
   const [showControls, setShowControls] = useState(false);
   const { controls, langName, levaGlobal } = useLevaControls({
-    hideLeva: !showControls,
+    hideLeva: !showControls || isLoading,
     containerRender: {
       /* eslint-disable react-hooks/rules-of-hooks */
       bgType: ({ value, setValue }) => {
@@ -67,6 +152,8 @@ function App() {
               { v: 8, media: bgVideoFish, loadTexture: true, type: 'video' as const },
               { v: 9, media: bgVideo2, loadTexture: true, type: 'video' as const },
               { v: 10, media: bgVideo3, loadTexture: true, type: 'video' as const },
+              { v: 12, media: bgMoon, loadTexture: true, type: 'video' as const },
+              { v: 13, media: bgStars, loadTexture: true, type: 'video' as const },
             ].map(({ v, media, loadTexture, type }) => {
               const mediaType = type === 'custom' ? customFileType : (type ?? 'image');
               const mediaUrl = type === 'custom' ? customFileUrl : media;
@@ -92,13 +179,10 @@ function App() {
                     setValue(v);
                     if (loadTexture && mediaUrl) {
                       stateRef.current.bgTextureUrl = mediaUrl;
-                      if (mediaType === 'video') {
-                        stateRef.current.bgTextureType = 'video';
-                      } else {
-                        stateRef.current.bgTextureType = 'image';
-                      }
+                      stateRef.current.bgTextureType = mediaType === 'video' ? 'video' : 'image';
                     } else {
                       stateRef.current.bgTextureUrl = null;
+                      stateRef.current.bgTextureType = null;
                       stateRef.current.bgTextureReady = false;
                     }
                   }}
@@ -146,11 +230,7 @@ function App() {
                           setCustomFileType(fileType);
                           setValue(v);
                           stateRef.current.bgTextureUrl = newUrl;
-                          if (fileType === 'video') {
-                            stateRef.current.bgTextureType = 'video';
-                          } else {
-                            stateRef.current.bgTextureType = 'image';
-                          }
+                          stateRef.current.bgTextureType = fileType;
                         }}
                       ></input>
                       <FileUploadOutlinedIcon />
@@ -186,38 +266,149 @@ function App() {
     },
   });
 
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const effect = glassEffectRef.current;
+    const debug = displacementDebugRef.current;
+    const feImage = glassFeImageRef.current;
+    const redChannel = redChannelRef.current;
+    const greenChannel = greenChannelRef.current;
+    const blueChannel = blueChannelRef.current;
+    const outputBlur = outputBlurRef.current;
+
+    if (
+      !effect ||
+      !debug ||
+      !feImage ||
+      !redChannel ||
+      !greenChannel ||
+      !blueChannel ||
+      !outputBlur
+    ) {
+      return;
+    }
+
+    const buildDisplacementImage = () => {
+      debug.innerHTML = buildDisplacementMarkup(glassConfig);
+      const svgEl = debug.querySelector('.displacement-image');
+      if (!svgEl) {
+        return;
+      }
+
+      const serialized = new XMLSerializer().serializeToString(svgEl);
+      const dataUri = `data:image/svg+xml,${encodeURIComponent(serialized)}`;
+      feImage.setAttribute('href', dataUri);
+
+      for (const channel of [redChannel, greenChannel, blueChannel]) {
+        channel.setAttribute('xChannelSelector', glassConfig.x);
+        channel.setAttribute('yChannelSelector', glassConfig.y);
+      }
+
+      redChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.r}`);
+      greenChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.g}`);
+      blueChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.b}`);
+      outputBlur.setAttribute('stdDeviation', `${glassConfig.displace}`);
+    };
+
+    effect.style.setProperty('--width', `${glassConfig.width}`);
+    effect.style.setProperty('--height', `${glassConfig.height}`);
+    effect.style.setProperty('--radius', `${glassConfig.radius}`);
+    effect.style.setProperty('--frost', `${glassConfig.frost}`);
+    effect.style.setProperty('--saturation', `${glassConfig.saturation}`);
+
+    buildDisplacementImage();
+    gsap.set(effect, {
+      opacity: 1,
+    });
+
+    let parallaxFrame = 0;
+    const updateBubbleParallax = () => {
+      parallaxFrame = 0;
+      const sectionRect = scrollSectionRef.current?.getBoundingClientRect();
+      if (!sectionRect) {
+        return;
+      }
+
+      const viewportCenter = window.innerHeight * 0.5;
+      const sectionCenter = sectionRect.top + sectionRect.height * 0.5;
+      const distance = sectionCenter - viewportCenter;
+      const parallaxY = distance * -0.08;
+      effect.style.setProperty('--bubble-parallax-y', `${parallaxY}px`);
+    };
+
+    const requestBubbleParallax = () => {
+      if (parallaxFrame) {
+        return;
+      }
+
+      parallaxFrame = requestAnimationFrame(updateBubbleParallax);
+    };
+
+    window.addEventListener('scroll', requestBubbleParallax, { passive: true });
+    window.addEventListener('resize', requestBubbleParallax);
+    updateBubbleParallax();
+
+    return () => {
+      cancelAnimationFrame(parallaxFrame);
+      window.removeEventListener('scroll', requestBubbleParallax);
+      window.removeEventListener('resize', requestBubbleParallax);
+      gsap.set(effect, {
+        opacity: 0,
+      });
+    };
+  }, [isLoading]);
+
   const stateRef = useRef<{
     renderRaf: number | null;
     canvasInfo: typeof canvasInfo;
-    glStates: {
-      gl: WebGL2RenderingContext;
-      programs: Record<string, WebGLProgram>;
-      vao: WebGLVertexArrayObject;
-    } | null;
     canvasPointerPos: { x: number; y: number };
     controls: typeof controls;
-    blurWeights: number[];
+    blurWeights: Float32Array;
+    modelRoot: THREE.Object3D | null;
+    model: THREE.Object3D | null;
+    modelCenter: THREE.Vector3 | null;
+    lastCameraSettings: {
+      orbitTheta: number;
+      orbitPhi: number;
+      orbitRadius: number;
+    };
     lastMouseSpringValue: { x: number; y: number };
     lastMouseSpringTime: null | number;
     mouseSpring: Controller<{ x: number; y: number }>;
     mouseSpringSpeed: { x: number; y: number };
     bgTextureUrl: string | null;
-    bgTexture: WebGLTexture | null;
+    bgTexture: THREE.Texture | null;
     bgTextureRatio: number;
     bgTextureType: 'image' | 'video' | null;
     bgTextureReady: boolean;
     bgVideoEls: Map<number, HTMLVideoElement>;
     langName: typeof langName;
+    materialTweakTargets: Array<{
+      material: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+      baseMetalness: number;
+      baseRoughness: number;
+      baseEnvMapIntensity: number;
+    }>;
   }>({
     renderRaf: null,
-    glStates: null,
     canvasInfo,
     canvasPointerPos: {
       x: 0,
       y: 0,
     },
     controls,
-    blurWeights: [],
+    blurWeights: new Float32Array(201),
+    modelRoot: null,
+    model: null,
+    modelCenter: null,
+    lastCameraSettings: {
+      orbitTheta: Number.NaN,
+      orbitPhi: Number.NaN,
+      orbitRadius: Number.NaN,
+    },
     lastMouseSpringValue: {
       x: 0,
       y: 0,
@@ -267,6 +458,7 @@ function App() {
     bgTextureReady: false,
     bgVideoEls: new Map(),
     langName: langName,
+    materialTweakTargets: [],
   });
   stateRef.current.canvasInfo = canvasInfo;
   stateRef.current.controls = controls;
@@ -279,7 +471,10 @@ function App() {
   // console.log(controls.language);
 
   useMemo(() => {
-    stateRef.current.blurWeights = computeGaussianKernelByRadius(controls.blurRadius);
+    const weights = computeGaussianKernelByRadius(controls.blurRadius);
+    const arr = new Float32Array(201);
+    arr.set(weights);
+    stateRef.current.blurWeights = arr;
   }, [controls.blurRadius]);
 
   useLayoutEffect(() => {
@@ -307,6 +502,13 @@ function App() {
   }, [canvasInfo]);
 
   useEffect(() => {
+    document.body.classList.toggle('app-loading', isLoading);
+    return () => {
+      document.body.classList.remove('app-loading');
+    };
+  }, [isLoading]);
+
+  useEffect(() => {
     if (!canvasRef.current) {
       return;
     }
@@ -328,137 +530,633 @@ function App() {
         immediate: true,
       });
     };
+
     document.addEventListener('pointermove', onPointerMove, true);
 
     const gl = canvasEl.getContext('webgl2');
     if (!gl) {
       return;
     }
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasEl,
+      context: gl,
+      alpha: true,
+      antialias: true,
+    });
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.physicallyCorrectLights = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setPixelRatio(canvasInfo.dpr);
+    renderer.setSize(canvasInfo.width, canvasInfo.height, false);
 
-    const renderer = new MultiPassRenderer(canvasEl, [
-      {
-        name: 'bgPass',
-        shader: {
-          vertex: VertexShader,
-          fragment: FragmentBgShader,
-        },
-      },
-      {
-        name: 'vBlurPass',
-        shader: {
-          vertex: VertexShader,
-          fragment: FragmentBgVblurShader,
-        },
-        inputs: {
-          u_prevPassTexture: 'bgPass',
-        },
-      },
-      {
-        name: 'hBlurPass',
-        shader: {
-          vertex: VertexShader,
-          fragment: FragmentBgHblurShader,
-        },
-        inputs: {
-          u_prevPassTexture: 'vBlurPass',
-        },
-      },
-      {
-        name: 'mainPass',
-        shader: {
-          vertex: VertexShader,
-          fragment: FragmentMainShader,
-        },
-        inputs: {
-          u_blurredBg: 'hBlurPass',
-          u_bg: 'bgPass',
-        },
-        outputToScreen: true,
-      },
-    ]);
+    const loadingManager = new THREE.LoadingManager();
+    loadingManager.onStart = () => {
+      if (!hasFinishedInitialLoad.current) {
+        setIsLoading(true);
+        setLoadingProgress(0);
+      }
+    };
+    loadingManager.onProgress = (_url, itemsLoaded, itemsTotal) => {
+      if (!hasFinishedInitialLoad.current && itemsTotal > 0) {
+        setLoadingProgress(Math.round((itemsLoaded / itemsTotal) * 100));
+      }
+    };
+    loadingManager.onError = () => {
+      if (!hasFinishedInitialLoad.current) {
+        setLoadingProgress(100);
+        setTimeout(() => {
+          setIsLoading(false);
+          hasFinishedInitialLoad.current = true;
+        }, 300);
+      }
+    };
+    loadingManager.onLoad = () => {
+      if (!hasFinishedInitialLoad.current) {
+        setLoadingProgress(100);
+        setTimeout(() => {
+          setIsLoading(false);
+          hasFinishedInitialLoad.current = true;
+        }, 300);
+      }
+    };
 
+    const textureLoader = new THREE.TextureLoader(loadingManager);
+    const dummyTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    dummyTexture.needsUpdate = true;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      50,
+      canvasInfo.width / canvasInfo.height,
+      1.5,
+      120,
+    );
+    camera.position.set(0, 1.1, 3.2);
+    scene.add(camera);
+
+    const introTextCanvas = document.createElement('canvas');
+    introTextCanvas.width = 1024;
+    introTextCanvas.height = 256;
+    const introTextCtx = introTextCanvas.getContext('2d');
+    let introTextTexture: THREE.CanvasTexture | null = null;
+    let introTextSprite: THREE.Sprite | null = null;
+
+    if (introTextCtx) {
+      const drawIntroText = () => {
+        introTextCtx.clearRect(0, 0, introTextCanvas.width, introTextCanvas.height);
+        introTextCtx.font = "700 150px 'Roboto', sans-serif";
+        introTextCtx.textBaseline = 'middle';
+        introTextCtx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+        introTextCtx.shadowBlur = 0;
+        introTextCtx.shadowOffsetX = 0;
+        introTextCtx.shadowOffsetY = 6;
+
+        // A subtle top rim keeps the text aligned with the scene lighting.
+        introTextCtx.lineWidth = 1;
+        introTextCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        introTextCtx.strokeText("Hi, I'm", 40, introTextCanvas.height * 0.5 - 1);
+
+        introTextCtx.fillStyle = '#8c8c8c';
+        introTextCtx.fillText("Hi, I'm", 40, introTextCanvas.height * 0.5);
+
+        if (introTextTexture) {
+          introTextTexture.needsUpdate = true;
+        }
+      };
+
+      introTextTexture = new THREE.CanvasTexture(introTextCanvas);
+      introTextTexture.colorSpace = THREE.SRGBColorSpace;
+      introTextTexture.minFilter = THREE.LinearFilter;
+      introTextTexture.magFilter = THREE.LinearFilter;
+      drawIntroText();
+
+      const introTextMaterial = new THREE.SpriteMaterial({
+        map: introTextTexture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      });
+      introTextSprite = new THREE.Sprite(introTextMaterial);
+      introTextSprite.renderOrder = 999;
+      introTextSprite.position.set(-1.625, 0.3, -2.7);
+      introTextSprite.scale.set(1.7, 0.45, 1);
+      camera.add(introTextSprite);
+
+      if ('fonts' in document && typeof document.fonts.load === 'function') {
+        document.fonts.load("700 150px Roboto").then(drawIntroText).catch(() => undefined);
+      }
+    }
+
+    const orbitControls = new OrbitControls(camera, canvasEl);
+    orbitControls.enableDamping = true;
+    orbitControls.dampingFactor = 0.08;
+    orbitControls.enablePan = false;
+    orbitControls.enableZoom = false;
+    orbitControls.autoRotate = true;
+    orbitControls.autoRotateSpeed = 0.6;
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x9a9a9a, 0.6);
+    scene.add(hemiLight);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambientLight);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(5, 8, 5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.bias = -0.0008;
+    keyLight.shadow.normalBias = 0.015;
+    keyLight.shadow.radius = 4;
+    keyLight.shadow.camera.near = 0.1;
+    keyLight.shadow.camera.far = 50;
+    keyLight.shadow.camera.left = -10;
+    keyLight.shadow.camera.right = 10;
+    keyLight.shadow.camera.top = 10;
+    keyLight.shadow.camera.bottom = -10;
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    fillLight.position.set(-5, 3, 2);
+    scene.add(fillLight);
+
+    const cameraTarget = new THREE.Vector3(4, 10, 0);
+
+    const registerMaterial = (material: THREE.Material) => {
+      const mat = material as THREE.MeshStandardMaterial;
+      if (typeof mat.metalness !== 'number' || typeof mat.roughness !== 'number') {
+        return;
+      }
+      stateRef.current.materialTweakTargets.push({
+        material: mat as THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial,
+        baseMetalness: mat.metalness,
+        baseRoughness: mat.roughness,
+        baseEnvMapIntensity: (mat as THREE.MeshStandardMaterial).envMapIntensity ?? 1,
+      });
+    };
+    const registerMeshMaterials = (mesh: THREE.Mesh) => {
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      mats.forEach(registerMaterial);
+    };
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new THREE.Scene();
+    const envSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(10, 32, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide }),
+    );
+    envScene.add(envSphere);
+    const envMap = pmrem.fromScene(envScene, 0.04).texture;
+    scene.environment = envMap;
+    pmrem.dispose();
+    envSphere.geometry.dispose();
+    (envSphere.material as THREE.Material).dispose();
+
+    const fallbackMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x66ccff }),
+    );
+    fallbackMesh.position.set(0, 0.6, 0);
+    fallbackMesh.castShadow = true;
+    fallbackMesh.receiveShadow = true;
+    registerMeshMaterials(fallbackMesh);
+    scene.add(fallbackMesh);
+
+    const shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(20, 20),
+      new THREE.ShadowMaterial({ opacity: 0.12 }),
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.y = 0;
+    shadowPlane.receiveShadow = true;
+    scene.add(shadowPlane);
+
+    let mixer: THREE.AnimationMixer | null = null;
+    const loader = new GLTFLoader(loadingManager);
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    loader.setDRACOLoader(dracoLoader);
+    loader.load(
+      '/Final.glb',
+      (gltf) => {
+        scene.remove(fallbackMesh);
+        fallbackMesh.geometry.dispose();
+        (fallbackMesh.material as THREE.Material).dispose();
+        const model = gltf.scene;
+        const modelRoot = new THREE.Group();
+        modelRoot.add(model);
+        scene.add(modelRoot);
+        stateRef.current.modelRoot = modelRoot;
+        stateRef.current.model = model;
+
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            registerMeshMaterials(mesh);
+          }
+        });
+
+        // Center the model on its own bounds so movement/orbit is intuitive.
+        const modelBox = new THREE.Box3().setFromObject(model);
+        if (!modelBox.isEmpty()) {
+          const modelCenter = modelBox.getCenter(new THREE.Vector3());
+          model.position.sub(modelCenter);
+          stateRef.current.modelCenter = modelCenter;
+        }
+
+        cameraTarget.set(0, 0, 0);
+        camera.lookAt(cameraTarget);
+        orbitControls.target.copy(cameraTarget);
+        orbitControls.update();
+        if (gltf.animations.length) {
+          mixer = new THREE.AnimationMixer(gltf.scene);
+          const idleClip =
+            gltf.animations.find((clip) => /idle/i.test(clip.name)) ?? gltf.animations[0];
+          if (idleClip) {
+            mixer.clipAction(idleClip).play();
+          }
+        }
+
+        // Debug: expose model and log the farthest nodes to locate misplaced assets.
+        (window as unknown as { __glb?: unknown }).__glb = { model, scene };
+        model.updateWorldMatrix(true, true);
+        const bbox = new THREE.Box3().setFromObject(model);
+        if (!bbox.isEmpty()) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          const size = bbox.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          console.log('GLB bbox center/size:', center, size, 'maxDim', maxDim.toFixed(2));
+
+          // Summarize top-level parts to spot a misplaced subtree.
+          const childSummaries = model.children.map((child) => {
+            const childBox = new THREE.Box3().setFromObject(child);
+            const childCenter = childBox.getCenter(new THREE.Vector3());
+            const childSize = childBox.getSize(new THREE.Vector3());
+            const dist = childCenter.distanceTo(center);
+            return {
+              name: child.name || '(unnamed)',
+              type: child.type,
+              x: Number(childCenter.x.toFixed(2)),
+              y: Number(childCenter.y.toFixed(2)),
+              z: Number(childCenter.z.toFixed(2)),
+              dist: Number(dist.toFixed(2)),
+              size: Number(Math.max(childSize.x, childSize.y, childSize.z).toFixed(2)),
+            };
+          });
+          childSummaries.sort((a, b) => b.dist - a.dist);
+          console.table(childSummaries);
+        } else {
+          console.warn('GLB bbox is empty; cannot compute top-level parts.');
+        }
+      },
+      undefined,
+      (error) => {
+        console.error('Failed to load /Final.glb', error);
+      },
+    );
+
+    const bgTarget = new THREE.WebGLRenderTarget(
+      canvasInfo.width * canvasInfo.dpr,
+      canvasInfo.height * canvasInfo.dpr,
+    );
+    bgTarget.texture.colorSpace = THREE.SRGBColorSpace;
+
+    const vBlurTarget = new THREE.WebGLRenderTarget(
+      canvasInfo.width * canvasInfo.dpr,
+      canvasInfo.height * canvasInfo.dpr,
+    );
+    vBlurTarget.texture.colorSpace = THREE.SRGBColorSpace;
+
+    const hBlurTarget = new THREE.WebGLRenderTarget(
+      canvasInfo.width * canvasInfo.dpr,
+      canvasInfo.height * canvasInfo.dpr,
+    );
+    hBlurTarget.texture.colorSpace = THREE.SRGBColorSpace;
+
+    const sceneTarget = new THREE.WebGLRenderTarget(
+      canvasInfo.width * canvasInfo.dpr,
+      canvasInfo.height * canvasInfo.dpr,
+    );
+    sceneTarget.samples = 4;
+    sceneTarget.texture.colorSpace = THREE.SRGBColorSpace;
+
+    const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    const bgMaterial = new THREE.RawShaderMaterial({
+      vertexShader: ScreenVertexShader,
+      fragmentShader: FragmentBgShader.replace(/^\uFEFF?\s*#version\s+300\s+es\s*/i, ''),
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        u_resolution: {
+          value: new THREE.Vector2(
+            canvasInfo.width * canvasInfo.dpr,
+            canvasInfo.height * canvasInfo.dpr,
+          ),
+        },
+        u_dpr: { value: canvasInfo.dpr },
+        u_mouse: { value: new THREE.Vector2(0, 0) },
+        u_mouseSpring: { value: new THREE.Vector2(0, 0) },
+        u_time: { value: 0 },
+        u_mergeRate: { value: 0 },
+        u_shapeWidth: { value: 0 },
+        u_shapeHeight: { value: 0 },
+        u_shapeRadius: { value: 0 },
+        u_shapeRoundness: { value: 0 },
+        u_shadowExpand: { value: 0 },
+        u_shadowFactor: { value: 0 },
+        u_shadowPosition: { value: new THREE.Vector2(0, 0) },
+        u_bgType: { value: 0 },
+        u_bgTexture: { value: dummyTexture },
+        u_bgTextureRatio: { value: 1 },
+        u_bgTextureReady: { value: 0 },
+        u_showShape1: { value: 1 },
+        u_refViewportWidth: { value: baseViewportWidthRef.current },
+        u_refViewportHeight: { value: baseViewportHeightRef.current },
+      },
+    });
+    const bgScene = new THREE.Scene();
+    bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMaterial));
+
+    const vBlurMaterial = new THREE.RawShaderMaterial({
+      vertexShader: ScreenVertexShader,
+      fragmentShader: FragmentBgVblurShader.replace(/^\uFEFF?\s*#version\s+300\s+es\s*/i, ''),
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        u_prevPassTexture: { value: sceneTarget.texture },
+        u_resolution: {
+          value: new THREE.Vector2(
+            canvasInfo.width * canvasInfo.dpr,
+            canvasInfo.height * canvasInfo.dpr,
+          ),
+        },
+        u_blurRadius: { value: 0 },
+        u_blurWeights: { value: stateRef.current.blurWeights },
+      },
+    });
+    const vBlurScene = new THREE.Scene();
+    vBlurScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), vBlurMaterial));
+
+    const hBlurMaterial = new THREE.RawShaderMaterial({
+      vertexShader: ScreenVertexShader,
+      fragmentShader: FragmentBgHblurShader.replace(/^\uFEFF?\s*#version\s+300\s+es\s*/i, ''),
+      glslVersion: THREE.GLSL3,
+      uniforms: {
+        u_prevPassTexture: { value: vBlurTarget.texture },
+        u_resolution: {
+          value: new THREE.Vector2(
+            canvasInfo.width * canvasInfo.dpr,
+            canvasInfo.height * canvasInfo.dpr,
+          ),
+        },
+        u_blurRadius: { value: 0 },
+        u_blurWeights: { value: stateRef.current.blurWeights },
+      },
+    });
+    const hBlurScene = new THREE.Scene();
+    hBlurScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), hBlurMaterial));
+
+    scene.background = bgTarget.texture;
+
+    const postMaterial = new THREE.RawShaderMaterial({
+      vertexShader: ScreenVertexShader,
+      fragmentShader: FragmentMainShader.replace(/^\uFEFF?\s*#version\s+300\s+es\s*/i, ''),
+      transparent: true,
+      glslVersion: THREE.GLSL3,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        u_resolution: {
+          value: new THREE.Vector2(
+            canvasInfo.width * canvasInfo.dpr,
+            canvasInfo.height * canvasInfo.dpr,
+          ),
+        },
+        u_dpr: { value: canvasInfo.dpr },
+        u_bg: { value: sceneTarget.texture },
+        u_blurredBg: { value: hBlurTarget.texture },
+        u_mouse: { value: new THREE.Vector2(0, 0) },
+        u_mouseSpring: { value: new THREE.Vector2(0, 0) },
+        u_mergeRate: { value: 0 },
+        u_shapeWidth: { value: 0 },
+        u_shapeHeight: { value: 0 },
+        u_shapeRadius: { value: 0 },
+        u_shapeRoundness: { value: 0 },
+        u_tint: { value: new THREE.Vector4(1, 1, 1, 1) },
+        u_refThickness: { value: 0 },
+        u_refFactor: { value: 0 },
+        u_refDispersion: { value: 0 },
+        u_refFresnelRange: { value: 0 },
+        u_refFresnelFactor: { value: 0 },
+        u_refFresnelHardness: { value: 0 },
+        u_glareRange: { value: 0 },
+        u_glareConvergence: { value: 0 },
+        u_glareOppositeFactor: { value: 0 },
+        u_glareFactor: { value: 0 },
+        u_glareHardness: { value: 0 },
+        u_glareAngle: { value: 0 },
+        u_blurEdge: { value: 0 },
+        u_showShape1: { value: 1 },
+        u_refViewportWidth: { value: baseViewportWidthRef.current },
+        u_refViewportHeight: { value: baseViewportHeightRef.current },
+        STEP: { value: 9 },
+      },
+    });
+    const postScene = new THREE.Scene();
+    postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial));
+
+    const clock = new THREE.Clock();
     let raf: number | null = null;
     const lastState = {
       canvasInfo: null as typeof canvasInfo | null,
-      controls: null as typeof controls | null,
-      bgTextureType: null as typeof stateRef.current.bgTextureType,
       bgTextureUrl: null as typeof stateRef.current.bgTextureUrl,
+      bgTextureType: null as typeof stateRef.current.bgTextureType,
     };
     const render = () => {
       raf = requestAnimationFrame(render);
 
       const canvasInfo = stateRef.current.canvasInfo;
-      const textureUrl = stateRef.current.bgTextureUrl;
+      const viewOffsetPx = {
+        x: (300 * canvasInfo.width) / baseViewportWidthRef.current,
+        y: (-50 * canvasInfo.height) / baseViewportHeightRef.current,
+      };
       if (
         !lastState.canvasInfo ||
         lastState.canvasInfo.width !== canvasInfo.width ||
         lastState.canvasInfo.height !== canvasInfo.height ||
         lastState.canvasInfo.dpr !== canvasInfo.dpr
       ) {
-        gl.viewport(
-          0,
-          0,
-          Math.round(canvasInfo.width * canvasInfo.dpr),
-          Math.round(canvasInfo.height * canvasInfo.dpr),
+        renderer.setPixelRatio(canvasInfo.dpr);
+        renderer.setSize(canvasInfo.width, canvasInfo.height, false);
+        bgTarget.setSize(canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr);
+        vBlurTarget.setSize(canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr);
+        hBlurTarget.setSize(canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr);
+        sceneTarget.setSize(canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr);
+        camera.aspect = canvasInfo.width / canvasInfo.height;
+        camera.updateProjectionMatrix();
+        const fullW = canvasInfo.width * canvasInfo.dpr;
+        const fullH = canvasInfo.height * canvasInfo.dpr;
+        camera.setViewOffset(
+          fullW,
+          fullH,
+          -viewOffsetPx.x * canvasInfo.dpr,
+          -viewOffsetPx.y * canvasInfo.dpr,
+          fullW,
+          fullH,
         );
-        renderer.resize(canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr);
-        renderer.setUniform('u_resolution', [
+        postMaterial.uniforms.u_resolution.value.set(
           canvasInfo.width * canvasInfo.dpr,
           canvasInfo.height * canvasInfo.dpr,
-        ]);
+        );
+        postMaterial.uniforms.u_dpr.value = canvasInfo.dpr;
+        bgMaterial.uniforms.u_resolution.value.set(
+          canvasInfo.width * canvasInfo.dpr,
+          canvasInfo.height * canvasInfo.dpr,
+        );
+        bgMaterial.uniforms.u_dpr.value = canvasInfo.dpr;
+        vBlurMaterial.uniforms.u_resolution.value.set(
+          canvasInfo.width * canvasInfo.dpr,
+          canvasInfo.height * canvasInfo.dpr,
+        );
+        hBlurMaterial.uniforms.u_resolution.value.set(
+          canvasInfo.width * canvasInfo.dpr,
+          canvasInfo.height * canvasInfo.dpr,
+        );
+        lastState.canvasInfo = canvasInfo;
       }
+
+      const textureUrl = stateRef.current.bgTextureUrl;
       if (textureUrl !== lastState.bgTextureUrl) {
-        if (lastState.bgTextureType === 'video') {
-          if (lastState.controls?.bgType !== undefined) {
-            stateRef.current.bgVideoEls.get(lastState.controls.bgType)?.pause();
-          }
+        if (stateRef.current.bgTexture) {
+          stateRef.current.bgTexture.dispose();
+          stateRef.current.bgTexture = null;
         }
+        stateRef.current.bgTextureReady = false;
         if (!textureUrl) {
-          if (stateRef.current.bgTexture) {
-            gl.deleteTexture(stateRef.current.bgTexture);
-            stateRef.current.bgTexture = null;
-            stateRef.current.bgTextureType = null;
-          }
-        } else {
-          if (stateRef.current.bgTextureType === 'image') {
-            const rafId = requestAnimationFrame(() => {
-              stateRef.current.bgTextureReady = false;
-            });
-            loadTextureFromURL(gl, textureUrl).then(({ texture, ratio }) => {
-              if (stateRef.current.bgTextureUrl === textureUrl) {
-                cancelAnimationFrame(rafId);
-                stateRef.current.bgTexture = texture;
-                stateRef.current.bgTextureRatio = ratio;
-                stateRef.current.bgTextureReady = true;
+          // no texture
+        } else if (stateRef.current.bgTextureType === 'image') {
+          textureLoader.load(
+            textureUrl,
+            (tex) => {
+              tex.colorSpace = THREE.SRGBColorSpace;
+              stateRef.current.bgTexture = tex;
+              const img = tex.image as HTMLImageElement | undefined;
+              if (img && img.width && img.height) {
+                stateRef.current.bgTextureRatio = img.width / img.height;
               }
-            });
-          } else if (stateRef.current.bgTextureType === 'video') {
-            stateRef.current.bgTextureReady = false;
-            stateRef.current.bgTexture = createEmptyTexture(gl);
-            stateRef.current.bgVideoEls.get(stateRef.current.controls.bgType)?.play();
+              stateRef.current.bgTextureReady = true;
+            },
+            undefined,
+            () => {
+              stateRef.current.bgTextureReady = false;
+            },
+          );
+        } else if (stateRef.current.bgTextureType === 'video') {
+          const videoEl = stateRef.current.bgVideoEls.get(stateRef.current.controls.bgType);
+          if (videoEl) {
+            const tex = new THREE.VideoTexture(videoEl);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            stateRef.current.bgTexture = tex;
+            const setRatio = () => {
+              if (videoEl.videoWidth && videoEl.videoHeight) {
+                stateRef.current.bgTextureRatio = videoEl.videoWidth / videoEl.videoHeight;
+              }
+              stateRef.current.bgTextureReady = true;
+            };
+            if (videoEl.readyState >= 1) {
+              setRatio();
+            } else {
+              videoEl.addEventListener('loadedmetadata', setRatio, { once: true });
+            }
+            videoEl.play().catch(() => undefined);
           }
         }
       }
-      lastState.controls = stateRef.current.controls;
+      lastState.bgTextureUrl = textureUrl;
       lastState.bgTextureType = stateRef.current.bgTextureType;
-      lastState.canvasInfo = canvasInfo;
-      lastState.bgTextureUrl = stateRef.current.bgTextureUrl;
-
-      if (stateRef.current.bgTextureType === 'video') {
-        const videoEl = stateRef.current.bgVideoEls.get(stateRef.current.controls.bgType);
-        if (stateRef.current.bgTexture && videoEl) {
-          const info = updateVideoTexture(gl, stateRef.current.bgTexture, videoEl);
-
-          if (info) {
-            stateRef.current.bgTextureRatio = info.ratio;
-            stateRef.current.bgTextureReady = true;
-          }
-        }
-      }
 
       const controls = stateRef.current.controls;
-      const mouseSpring = stateRef.current.mouseSpring.get();
+      const modelRoot = stateRef.current.modelRoot;
+      if (modelRoot) {
+        const last = stateRef.current.lastCameraSettings;
+        const orbitChanged =
+          controls.cameraOrbitTheta !== last.orbitTheta ||
+          controls.cameraOrbitPhi !== last.orbitPhi ||
+          controls.cameraOrbitRadius !== last.orbitRadius;
 
+        if (orbitChanged) {
+          const theta = THREE.MathUtils.degToRad(controls.cameraOrbitTheta);
+          const phi = THREE.MathUtils.degToRad(controls.cameraOrbitPhi);
+          const radius = Math.max(0.001, controls.cameraOrbitRadius);
+          const offset = new THREE.Vector3().setFromSpherical(new THREE.Spherical(radius, phi, theta));
+          camera.position.copy(orbitControls.target).add(offset);
+          camera.lookAt(orbitControls.target);
+        }
+
+        if (orbitChanged) {
+          orbitControls.update();
+          stateRef.current.lastCameraSettings = {
+            orbitTheta: controls.cameraOrbitTheta,
+            orbitPhi: controls.cameraOrbitPhi,
+            orbitRadius: controls.cameraOrbitRadius,
+          };
+        }
+      }
+
+      if (mixer) {
+        mixer.update(clock.getDelta());
+      }
+      orbitControls.update();
+      renderer.toneMappingExposure = controls.toneMappingExposure;
+
+      ambientLight.intensity = controls.ambientIntensity;
+      hemiLight.intensity = controls.hemiIntensity;
+      hemiLight.color.setRGB(
+        controls.hemiSkyColor.r / 255,
+        controls.hemiSkyColor.g / 255,
+        controls.hemiSkyColor.b / 255,
+      );
+      hemiLight.groundColor.setRGB(
+        controls.hemiGroundColor.r / 255,
+        controls.hemiGroundColor.g / 255,
+        controls.hemiGroundColor.b / 255,
+      );
+      keyLight.intensity = controls.keyIntensity;
+      keyLight.color.setRGB(
+        controls.keyColor.r / 255,
+        controls.keyColor.g / 255,
+        controls.keyColor.b / 255,
+      );
+      keyLight.position.set(controls.keyPosX, controls.keyPosY, controls.keyPosZ);
+      fillLight.intensity = controls.fillIntensity;
+      fillLight.color.setRGB(
+        controls.fillColor.r / 255,
+        controls.fillColor.g / 255,
+        controls.fillColor.b / 255,
+      );
+      fillLight.position.set(controls.fillPosX, controls.fillPosY, controls.fillPosZ);
+
+      const metalnessScale = controls.materialMetalnessScale;
+      const roughnessBoost = controls.materialRoughnessBoost;
+      const envScale = controls.envMapIntensityScale;
+      for (const target of stateRef.current.materialTweakTargets) {
+        target.material.metalness = THREE.MathUtils.clamp(
+          target.baseMetalness * metalnessScale,
+          0,
+          1,
+        );
+        target.material.roughness = THREE.MathUtils.clamp(
+          target.baseRoughness + roughnessBoost,
+          0,
+          1,
+        );
+        target.material.envMapIntensity = target.baseEnvMapIntensity * envScale;
+      }
+      const mouseSpring = stateRef.current.mouseSpring.get();
       const shapeSizeSpring = {
         x:
           controls.shapeWidth +
@@ -474,58 +1172,90 @@ function App() {
           100,
       };
 
-      renderer.setUniforms({
-        u_resolution: [canvasInfo.width * canvasInfo.dpr, canvasInfo.height * canvasInfo.dpr],
-        u_dpr: canvasInfo.dpr,
-        u_blurWeights: stateRef.current.blurWeights,
-        u_blurRadius: stateRef.current.controls.blurRadius,
-        u_mouse: [stateRef.current.canvasPointerPos.x, stateRef.current.canvasPointerPos.y],
-        u_mouseSpring: [mouseSpring.x, mouseSpring.y],
-        u_shapeWidth: shapeSizeSpring.x,
-        u_shapeHeight: shapeSizeSpring.y,
-        u_shapeRadius:
-          ((Math.min(shapeSizeSpring.x, shapeSizeSpring.y) / 2) * controls.shapeRadius) / 100,
-        u_shapeRoundness: controls.shapeRoundness,
-        u_mergeRate: controls.mergeRate,
-        u_glareAngle: (controls.glareAngle * Math.PI) / 180,
-        u_showShape1: controls.showShape1 ? 1 : 0,
-      });
+      const blurRadius = Math.max(0, Math.min(200, Math.round(controls.blurRadius)));
 
-      renderer.render({
-        bgPass: {
-          u_bgType: controls.bgType,
-          u_bgTexture: (stateRef.current.bgTextureUrl && stateRef.current.bgTexture) ?? undefined,
-          u_bgTextureRatio:
-            stateRef.current.bgTextureUrl && stateRef.current.bgTexture
-              ? stateRef.current.bgTextureRatio
-              : undefined,
-          u_bgTextureReady: stateRef.current.bgTextureReady ? 1 : 0,
-          u_shadowExpand: controls.shadowExpand,
-          u_shadowFactor: controls.shadowFactor / 100,
-          u_shadowPosition: [-controls.shadowPosition.x, -controls.shadowPosition.y],
-        },
-        mainPass: {
-          u_tint: [
-            controls.tint.r / 255,
-            controls.tint.g / 255,
-            controls.tint.b / 255,
-            controls.tint.a,
-          ],
-          u_refThickness: controls.refThickness,
-          u_refFactor: controls.refFactor,
-          u_refDispersion: controls.refDispersion,
-          u_refFresnelRange: controls.refFresnelRange,
-          u_refFresnelHardness: controls.refFresnelHardness / 100,
-          u_refFresnelFactor: controls.refFresnelFactor / 100,
-          u_glareRange: controls.glareRange,
-          u_glareHardness: controls.glareHardness / 100,
-          u_glareConvergence: controls.glareConvergence / 100,
-          u_glareOppositeFactor: controls.glareOppositeFactor / 100,
-          u_glareFactor: controls.glareFactor / 100,
-          u_blurEdge: controls.blurEdge ? 1 : 0,
-          STEP: controls.step,
-        },
-      });
+      bgMaterial.uniforms.u_time.value = clock.elapsedTime;
+      bgMaterial.uniforms.u_mouse.value.set(
+        stateRef.current.canvasPointerPos.x,
+        stateRef.current.canvasPointerPos.y,
+      );
+      bgMaterial.uniforms.u_mouseSpring.value.set(mouseSpring.x, mouseSpring.y);
+      bgMaterial.uniforms.u_mergeRate.value = controls.mergeRate;
+      bgMaterial.uniforms.u_shapeWidth.value = shapeSizeSpring.x;
+      bgMaterial.uniforms.u_shapeHeight.value = shapeSizeSpring.y;
+      bgMaterial.uniforms.u_shapeRadius.value =
+        ((Math.min(shapeSizeSpring.x, shapeSizeSpring.y) / 2) * controls.shapeRadius) / 100;
+      bgMaterial.uniforms.u_shapeRoundness.value = controls.shapeRoundness;
+      bgMaterial.uniforms.u_shadowExpand.value = controls.shadowExpand;
+      bgMaterial.uniforms.u_shadowFactor.value = controls.shadowFactor / 100;
+      bgMaterial.uniforms.u_shadowPosition.value.set(
+        -controls.shadowPosition.x,
+        -controls.shadowPosition.y,
+      );
+      bgMaterial.uniforms.u_bgType.value = controls.bgType;
+      bgMaterial.uniforms.u_bgTexture.value = stateRef.current.bgTexture ?? dummyTexture;
+      bgMaterial.uniforms.u_bgTextureRatio.value = stateRef.current.bgTextureRatio;
+      bgMaterial.uniforms.u_bgTextureReady.value = stateRef.current.bgTextureReady ? 1 : 0;
+      bgMaterial.uniforms.u_showShape1.value = controls.showShape1 ? 1 : 0;
+
+      vBlurMaterial.uniforms.u_blurRadius.value = blurRadius;
+      vBlurMaterial.uniforms.u_blurWeights.value = stateRef.current.blurWeights;
+      hBlurMaterial.uniforms.u_blurRadius.value = blurRadius;
+      hBlurMaterial.uniforms.u_blurWeights.value = stateRef.current.blurWeights;
+
+      postMaterial.uniforms.u_mouse.value.set(
+        stateRef.current.canvasPointerPos.x,
+        stateRef.current.canvasPointerPos.y,
+      );
+      postMaterial.uniforms.u_mouseSpring.value.set(mouseSpring.x, mouseSpring.y);
+      postMaterial.uniforms.u_shapeWidth.value = shapeSizeSpring.x;
+      postMaterial.uniforms.u_shapeHeight.value = shapeSizeSpring.y;
+      postMaterial.uniforms.u_shapeRadius.value =
+        ((Math.min(shapeSizeSpring.x, shapeSizeSpring.y) / 2) * controls.shapeRadius) / 100;
+      postMaterial.uniforms.u_shapeRoundness.value = controls.shapeRoundness;
+      postMaterial.uniforms.u_mergeRate.value = controls.mergeRate;
+      const glareAngleDegrees = controls.glareAngleAnimate
+        ? controls.glareAngle + clock.elapsedTime * controls.glareAngleSpeed
+        : controls.glareAngle;
+      postMaterial.uniforms.u_glareAngle.value = (glareAngleDegrees * Math.PI) / 180;
+      postMaterial.uniforms.u_showShape1.value = controls.showShape1 ? 1 : 0;
+      postMaterial.uniforms.u_tint.value.set(
+        controls.tint.r / 255,
+        controls.tint.g / 255,
+        controls.tint.b / 255,
+        controls.tint.a,
+      );
+      postMaterial.uniforms.u_refThickness.value = controls.refThickness;
+      postMaterial.uniforms.u_refFactor.value = controls.refFactor;
+      postMaterial.uniforms.u_refDispersion.value = controls.refDispersion;
+      postMaterial.uniforms.u_refFresnelRange.value = controls.refFresnelRange;
+      postMaterial.uniforms.u_refFresnelHardness.value = controls.refFresnelHardness / 100;
+      postMaterial.uniforms.u_refFresnelFactor.value = controls.refFresnelFactor / 100;
+      postMaterial.uniforms.u_glareRange.value = controls.glareRange;
+      postMaterial.uniforms.u_glareHardness.value = controls.glareHardness / 100;
+      postMaterial.uniforms.u_glareConvergence.value = controls.glareConvergence / 100;
+      postMaterial.uniforms.u_glareOppositeFactor.value = controls.glareOppositeFactor / 100;
+      postMaterial.uniforms.u_glareFactor.value = controls.glareFactor / 100;
+      postMaterial.uniforms.u_blurEdge.value = controls.blurEdge ? 1 : 0;
+      postMaterial.uniforms.STEP.value = 9;
+
+      renderer.setRenderTarget(bgTarget);
+      renderer.clear();
+      renderer.render(bgScene, postCamera);
+
+      renderer.setRenderTarget(sceneTarget);
+      renderer.clear();
+      renderer.render(scene, camera);
+
+      renderer.setRenderTarget(vBlurTarget);
+      renderer.clear();
+      renderer.render(vBlurScene, postCamera);
+
+      renderer.setRenderTarget(hBlurTarget);
+      renderer.clear();
+      renderer.render(hBlurScene, postCamera);
+      renderer.setRenderTarget(null);
+      renderer.render(postScene, postCamera);
     };
     raf = requestAnimationFrame(render);
 
@@ -534,22 +1264,93 @@ function App() {
       if (raf) {
         cancelAnimationFrame(raf);
       }
+      shadowPlane.geometry.dispose();
+      (shadowPlane.material as THREE.Material).dispose();
+      bgTarget.dispose();
+      vBlurTarget.dispose();
+      hBlurTarget.dispose();
+      sceneTarget.dispose();
+      postMaterial.dispose();
+      bgMaterial.dispose();
+      vBlurMaterial.dispose();
+      hBlurMaterial.dispose();
+      dummyTexture.dispose();
+      if (stateRef.current.bgTexture) {
+        stateRef.current.bgTexture.dispose();
+        stateRef.current.bgTexture = null;
+      }
+      if (introTextSprite) {
+        camera.remove(introTextSprite);
+        (introTextSprite.material as THREE.Material).dispose();
+      }
+      if (introTextTexture) {
+        introTextTexture.dispose();
+      }
+      envMap.dispose();
+      orbitControls.dispose();
+      dracoLoader.dispose();
       renderer.dispose();
     };
   }, []);
 
   return (
     <>
-      {levaGlobal}
-      <button
-        type="button"
-        className={styles.controlsToggleFloating}
-        onClick={() => setShowControls((prev) => !prev)}
-      >
-        {showControls ? 'Hide controls' : 'Show controls'}
-      </button>
+      {!isLoading && levaGlobal}
+      {!isLoading && (
+        <button
+          type="button"
+          className={styles.controlsToggleFloating}
+          onClick={() => setShowControls((prev) => !prev)}
+        >
+          {showControls ? 'Hide controls' : 'Show controls'}
+        </button>
+      )}
       <section className={styles.hero}>
-        <div className={clsx(styles.canvasContainer)}>
+        {(() => {
+          const progressDone = loadingProgress >= 100;
+          return (
+        <div
+          className={clsx(styles.loadingOverlay, !isLoading && styles.loadingOverlayHidden)}
+          aria-hidden={!isLoading}
+        >
+          <div className={styles.loadingCard} role="status" aria-live="polite">
+            <div className={styles.loadingTitle}>Loading assets</div>
+            <div className={styles.loaderContainer}>
+              <div className={styles.loaderBar}>
+                <div
+                  className={clsx(
+                    styles.loaderProgress,
+                    progressDone && styles.loaderProgressDone,
+                  )}
+                  style={{ width: `${loadingProgress}%` }}
+                >
+                  <div className={styles.loaderEnergy}>
+                    <span className={styles.loaderCore} />
+                    <span className={styles.loaderGlare} />
+                    <div className={styles.loaderParticles}>
+                      {Array.from({ length: 16 }).map((_, index) => (
+                        <span
+                          key={index}
+                          className={styles.loaderParticle}
+                          style={{
+                            ['--delay' as const]: `${index * 0.08}s`,
+                            ['--size' as const]: `${1 + (index % 3)}px`,
+                            ['--offset' as const]: `${(index % 6) * 4 - 10}px`,
+                            ['--offsetY' as const]: `${(index % 5) * 4 - 8}px`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className={styles.loadingPercent}>{loadingProgress}%</div>
+            </div>
+          </div>
+        </div>
+          );
+        })()}
+        <div className={clsx(styles.canvasContainer, isLoading && styles.canvasContainerHidden)}>
           <canvas
             ref={canvasRef}
             className={styles.canvas}
@@ -560,125 +1361,222 @@ function App() {
             }
           />
         </div>
-        <model-viewer
-          class={styles.heroModel}
-          src="/Final.glb"
-          camera-controls
-          autoplay
-          auto-rotate
-          animation-name="*"
-          disable-zoom
-          disable-pan
-          shadow-intensity="0.6"
-          exposure="1.1"
-          environment-image="neutral"
-        ></model-viewer>
       </section>
-      <section className={styles.scrollSection}>
-        <div className={styles.scrollSectionInner}>
-          <h2>Davi Bentim</h2>
-          <p>Web Developer / UI UX Designer</p>
-          <ul className={styles.simpleList}>
-            <li>Full Name: Davi Martins Bentim</li>
-            <li>Phone: +1 (208) 750-8500</li>
-            <li>Email: davi.bentim@gmail.com</li>
-            <li>Github: github.com/davijaca</li>
-          </ul>
+      {!isLoading && (
+        <>
+          <main ref={scrollSectionRef} className={styles.scrollSection}>
+            <section className={styles.placeholder}>
+              <div className={styles.dockPlaceholder} />
+              <div
+                ref={glassEffectRef}
+                className={styles.effect}
+              >
+                <div className={styles.navWrap} />
+                <svg className={styles.filter} xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <filter id="filter" colorInterpolationFilters="sRGB">
+                      <feImage
+                        ref={glassFeImageRef}
+                        x="0"
+                        y="0"
+                        width="100%"
+                        height="100%"
+                        result="map"
+                      />
+                      <feDisplacementMap
+                        ref={redChannelRef}
+                        in="SourceGraphic"
+                        in2="map"
+                        id="redchannel"
+                        xChannelSelector="R"
+                        yChannelSelector="B"
+                        result="dispRed"
+                      />
+                      <feColorMatrix
+                        in="dispRed"
+                        type="matrix"
+                        values="1 0 0 0 0
+                                0 0 0 0 0
+                                0 0 0 0 0
+                                0 0 0 1 0"
+                        result="red"
+                      />
+                      <feDisplacementMap
+                        ref={greenChannelRef}
+                        in="SourceGraphic"
+                        in2="map"
+                        id="greenchannel"
+                        xChannelSelector="R"
+                        yChannelSelector="B"
+                        result="dispGreen"
+                      />
+                      <feColorMatrix
+                        in="dispGreen"
+                        type="matrix"
+                        values="0 0 0 0 0
+                                0 1 0 0 0
+                                0 0 0 0 0
+                                0 0 0 1 0"
+                        result="green"
+                      />
+                      <feDisplacementMap
+                        ref={blueChannelRef}
+                        in="SourceGraphic"
+                        in2="map"
+                        id="bluechannel"
+                        xChannelSelector="R"
+                        yChannelSelector="B"
+                        result="dispBlue"
+                      />
+                      <feColorMatrix
+                        in="dispBlue"
+                        type="matrix"
+                        values="0 0 0 0 0
+                                0 0 0 0 0
+                                0 0 1 0 0
+                                0 0 0 1 0"
+                        result="blue"
+                      />
+                      <feBlend in="red" in2="green" mode="screen" result="rg" />
+                      <feBlend in="rg" in2="blue" mode="screen" result="output" />
+                      <feGaussianBlur ref={outputBlurRef} in="output" stdDeviation="0.7" />
+                    </filter>
+                  </defs>
+                </svg>
+                <div ref={displacementDebugRef} className={styles.displacementDebug} />
+              </div>
+            </section>
 
-          <h2>About</h2>
-          <p>
-            Davi Martins Bentim is a Brazilian full stack web developer and UI/UX designer currently
-            living in the United States, with a passion for creating beautiful and functional
-            websites.
-          </p>
-          <p>
-            He completed the MIT xPro MERN Stack Development program in 2022 and is currently
-            pursuing a Bachelors degree in Web Development at the University of Europe for Applied
-            Sciences.
-            He has been working as a freelance developer and designer and is employed at Smatched
-            (Heidelberg, Germany) since August 2023.
-          </p>
-
-          <h2>Experience</h2>
-          <div className={styles.timeline}>
-            <div className={styles.timelineItem}>
-              <h3>Lead Project Manager</h3>
-              <p>Smatched - 2023 to present</p>
-              <ul>
-                <li>Led rebuilds of smatched.io and offerwallmonetization.com.</li>
-                <li>Coordinated with SEO and design teams to align deliverables.</li>
-                <li>Managed a team of up to five interns and ensured on-time delivery.</li>
-                <li>Maintained quality standards and project requirements.</li>
-              </ul>
-            </div>
-            <div className={styles.timelineItem}>
-              <h3>Front End Web Developer</h3>
-              <p>Smatched - 2023 to present</p>
-              <ul>
-                <li>Migrated Smatched from WordPress/Elementor to React.</li>
-                <li>Managed GitHub and GitLab repositories and documentation.</li>
-                <li>Performed code reviews and provided technical support.</li>
-              </ul>
-            </div>
-            <div className={styles.timelineItem}>
-              <h3>Freelance Full Stack Developer</h3>
-              <p>Self-employed - 2020 to present</p>
-              <ul>
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>Portfolio</p>
+              <h2>Davi Bentim</h2>
+              <p className={styles.lead}>Web Developer / UI UX Designer</p>
+              <ul className={styles.metaList}>
                 <li>
-                  Built and maintained websites for small businesses in the Brazilian community in
-                  the Salt Lake City area.
+                  <span>Full Name</span>
+                  Davi Martins Bentim
+                </li>
+                <li>
+                  <span>Phone</span>
+                  +1 (208) 750-8500
+                </li>
+                <li>
+                  <span>Email</span>
+                  davi.bentim@gmail.com
+                </li>
+                <li>
+                  <span>GitHub</span>
+                  github.com/davijaca
                 </li>
               </ul>
-            </div>
-          </div>
+            </section>
 
-          <h2>Education</h2>
-          <ul className={styles.simpleList}>
-            <li>
-              University of Europe for Applied Sciences - Bachelors Degree (2023 to present),
-              Game Design BA, second semester online
-            </li>
-            <li>
-              Massachussetts Institute of Technology - MERN Stack Development (2021 to 2022),
-              highest grades across projects including the capstone, 3.7 GPA
-            </li>
-            <li>EEEM Padre Reus - High School (2010)</li>
-          </ul>
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>About</p>
+              <h2>Full stack craft with a design eye</h2>
+              <p>
+                Davi Martins Bentim is a Brazilian full stack web developer and UI/UX designer
+                currently living in the United States, with a passion for creating beautiful and
+                functional websites.
+              </p>
+              <p>
+                He completed the MIT xPro MERN Stack Development program in 2022 and is currently
+                pursuing a Bachelor's degree in Web Development at the University of Europe for
+                Applied Sciences. He has been working as a freelance developer and designer and is
+                employed at Smatched (Heidelberg, Germany) since August 2023.
+              </p>
+            </section>
 
-          <h2>Skills</h2>
-          <div className={styles.skillGrid}>
-            <div>HTML5 - 95%</div>
-            <div>CSS3 - 95%</div>
-            <div>React.js - 90%</div>
-            <div>JavaScript - 90%</div>
-            <div>MongoDB - 85%</div>
-            <div>WordPress - 90%</div>
-            <div>UI/UX - 90%</div>
-            <div>Design - 90%</div>
-            <div>Figma - 70%</div>
-          </div>
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>Experience</p>
+              <h2>Recent roles</h2>
+              <div className={styles.timeline}>
+                <article className={styles.timelineItem}>
+                  <h3>Lead Project Manager</h3>
+                  <p>Smatched - 2023 to present</p>
+                  <ul>
+                    <li>Led rebuilds of smatched.io and offerwallmonetization.com.</li>
+                    <li>Coordinated with SEO and design teams to align deliverables.</li>
+                    <li>Managed a team of up to five interns and ensured on-time delivery.</li>
+                    <li>Maintained quality standards and project requirements.</li>
+                  </ul>
+                </article>
+                <article className={styles.timelineItem}>
+                  <h3>Front End Web Developer</h3>
+                  <p>Smatched - 2023 to present</p>
+                  <ul>
+                    <li>Migrated Smatched from WordPress/Elementor to React.</li>
+                    <li>Managed GitHub and GitLab repositories and documentation.</li>
+                    <li>Performed code reviews and provided technical support.</li>
+                  </ul>
+                </article>
+                <article className={styles.timelineItem}>
+                  <h3>Freelance Full Stack Developer</h3>
+                  <p>Self-employed - 2020 to present</p>
+                  <ul>
+                    <li>
+                      Built and maintained websites for small businesses in the Brazilian community
+                      in the Salt Lake City area.
+                    </li>
+                  </ul>
+                </article>
+              </div>
+            </section>
 
-          <h2>Hire Me</h2>
-          <p>Open to new opportunities and freelance work.</p>
-          <p>Contact us to discuss projects and collaborations.</p>
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>Education</p>
+              <h2>Training and credentials</h2>
+              <ul className={styles.simpleList}>
+                <li>
+                  University of Europe for Applied Sciences - Bachelor's Degree (2023 to present),
+                  Game Design BA, second semester online
+                </li>
+                <li>
+                  Massachusetts Institute of Technology - MERN Stack Development (2021 to 2022),
+                  highest grades across projects including the capstone, 3.7 GPA
+                </li>
+                <li>EEEM Padre Reus - High School (2010)</li>
+              </ul>
+            </section>
 
-          <h2>Contact</h2>
-          <div className={styles.contactGrid}>
-            <div>
-              <strong>Phone</strong>
-              <div>+1 (208) 750-8500</div>
-            </div>
-            <div>
-              <strong>Email</strong>
-              <div>davi.bentim@gmail.com</div>
-            </div>
-            <div>
-              <strong>GitHub</strong>
-              <div>github.com/davijaca</div>
-            </div>
-          </div>
-        </div>
-      </section>
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>Skills</p>
+              <h2>Tools and strengths</h2>
+              <div className={styles.skillGrid}>
+                <div>HTML5 - 95%</div>
+                <div>CSS3 - 95%</div>
+                <div>React.js - 90%</div>
+                <div>JavaScript - 90%</div>
+                <div>MongoDB - 85%</div>
+                <div>WordPress - 90%</div>
+                <div>UI/UX - 90%</div>
+                <div>Design - 90%</div>
+                <div>Figma - 70%</div>
+              </div>
+            </section>
+
+            <section className={styles.contentPanel}>
+              <p className={styles.sectionEyebrow}>Hire Me</p>
+              <h2>Open to new opportunities and freelance work</h2>
+              <p>Contact me to discuss projects and collaborations.</p>
+              <div className={styles.contactGrid}>
+                <div>
+                  <strong>Phone</strong>
+                  <span>+1 (208) 750-8500</span>
+                </div>
+                <div>
+                  <strong>Email</strong>
+                  <span>davi.bentim@gmail.com</span>
+                </div>
+                <div>
+                  <strong>GitHub</strong>
+                  <span>github.com/davijaca</span>
+                </div>
+              </div>
+            </section>
+          </main>
+        </>
+      )}
     </>
   );
 }

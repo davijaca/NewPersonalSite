@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// 基础类型定义
+// Basic type definitions
 type GL = WebGL2RenderingContext;
 
 interface ShaderSource {
@@ -29,7 +29,7 @@ interface RenderPassConfig {
   outputToScreen?: boolean;
 }
 
-// 着色器程序类
+// Shader program class
 export class ShaderProgram {
   private gl: GL;
   private program: WebGLProgram;
@@ -172,7 +172,7 @@ export class ShaderProgram {
         case gl.FLOAT_VEC4:
           gl.uniform4fv(uniformInfo.location, value);
           break;
-        // 添加其他类型的处理...
+        // Add handlers for other uniform types as needed...
       }
     } else {
       switch (uniformInfo.type) {
@@ -213,29 +213,29 @@ export class ShaderProgram {
   public dispose(): void {
     const gl = this.gl;
 
-    // 删除着色器程序
+    // Delete shader program
     if (this.program) {
-      // 获取附加的着色器
+      // Get attached shaders
       const shaders = gl.getAttachedShaders(this.program);
 
-      // 删除每个着色器
+      // Delete each shader
       if (shaders) {
         shaders.forEach(shader => {
           gl.deleteShader(shader);
         });
       }
 
-      // 删除程序
+      // Delete program
       gl.deleteProgram(this.program);
     }
 
-    // 清理映射
+    // Clear caches
     this.uniforms.clear();
     this.attributes.clear();
   }
 }
 
-// 帧缓冲区类
+// Framebuffer class
 export class FrameBuffer {
   private gl: GL;
   private fbo: WebGLFramebuffer;
@@ -249,7 +249,7 @@ export class FrameBuffer {
     this.width = width;
     this.height = height;
 
-    // 创建FBO和附件
+    // Create FBO and attachments
     const { fbo, texture, depthTexture } = this.createFramebuffer();
     this.fbo = fbo;
     this.texture = texture;
@@ -259,12 +259,12 @@ export class FrameBuffer {
   private createFramebuffer() {
     const gl = this.gl;
 
-    // 创建并绑定FBO
+    // Create and bind FBO
     const fbo = gl.createFramebuffer();
     if (!fbo) throw new Error("Failed to create framebuffer");
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 
-    // 创建颜色附件
+    // Create color attachment
     const texture = gl.createTexture();
     if (!texture) throw new Error("Failed to create texture");
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -291,7 +291,7 @@ export class FrameBuffer {
       0
     );
 
-    // 创建深度附件
+    // Create depth attachment
     const depthTexture = gl.createTexture();
     if (!depthTexture) throw new Error("Failed to create depth texture");
     gl.bindTexture(gl.TEXTURE_2D, depthTexture);
@@ -316,13 +316,13 @@ export class FrameBuffer {
       0
     );
 
-    // 检查FBO状态
+    // Check FBO status
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     if (status !== gl.FRAMEBUFFER_COMPLETE) {
       throw new Error(`Framebuffer is incomplete: ${status}`);
     }
 
-    // 解绑
+    // Unbind
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
 
@@ -349,7 +349,7 @@ export class FrameBuffer {
     this.width = width;
     this.height = height;
 
-    // 重新创建纹理附件
+    // Recreate texture attachments
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
     this.gl.texImage2D(
       this.gl.TEXTURE_2D,
@@ -387,7 +387,7 @@ export class FrameBuffer {
   }
 }
 
-// 渲染通道类
+// Render pass class
 export class RenderPass {
   private gl: GL;
   private program: ShaderProgram;
@@ -412,12 +412,12 @@ export class RenderPass {
   private createVAO(): WebGLVertexArrayObject {
     const gl = this.gl;
 
-    // 创建并绑定VAO
+    // Create and bind VAO
     const vao = gl.createVertexArray();
     if (!vao) throw new Error("Failed to create VAO");
     gl.bindVertexArray(vao);
 
-    // 创建并设置顶点缓冲区
+    // Create and set up vertex buffer
     const buffer = gl.createBuffer();
     if (!buffer) throw new Error("Failed to create buffer");
 
@@ -426,12 +426,12 @@ export class RenderPass {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-    // 设置顶点属性
+    // Configure vertex attributes
     const positionLoc = this.program.getAttributeLocation("a_position");
     gl.enableVertexAttribArray(positionLoc);
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    // 解绑
+    // Unbind
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -445,24 +445,24 @@ export class RenderPass {
   public render(uniforms?: Record<string, any>): void {
     const gl = this.gl;
 
-    // 绑定FBO
+    // Bind FBO
     if (this.frameBuffer) {
       this.frameBuffer.bind();
     } else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
-    // 使用着色器程序
+    // Use shader program
     this.program.use();
 
-    // 设置uniforms
+    // Set uniforms
     if (uniforms) {
       let textureCount = 0;
       Object.entries(uniforms).forEach(([name, value]) => {
         if (value instanceof WebGLTexture) {
           gl.activeTexture(gl.TEXTURE0 + textureCount);
           gl.bindTexture(gl.TEXTURE_2D, value);
-          this.program.setUniform(name, textureCount); // 绑定为纹理单元编号
+          this.program.setUniform(name, textureCount); // Bind as texture unit index
           textureCount += 1;
         } else {
           this.program.setUniform(name, value);
@@ -470,12 +470,12 @@ export class RenderPass {
       });
     }
 
-    // 绑定VAO并绘制
+    // Bind VAO and draw
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
 
-    // 解绑FBO
+    // Unbind FBO
     if (this.frameBuffer) {
       this.frameBuffer.unbind();
     }
@@ -497,7 +497,7 @@ export class RenderPass {
     }
     this.program.dispose();
 
-    // 获取并删除顶点缓冲区
+    // Get and delete vertex buffer
     const gl = this.gl;
     gl.bindVertexArray(this.vao);
     const buffer = gl.getVertexAttrib(0, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);
@@ -508,7 +508,7 @@ export class RenderPass {
   }
 }
 
-// 多通道渲染器类
+// Multi-pass renderer class
 export class MultiPassRenderer {
   private gl: GL;
   private passes: Map<string, RenderPass> = new Map();
@@ -519,7 +519,7 @@ export class MultiPassRenderer {
     const gl = canvas.getContext("webgl2");
     if (!gl) throw new Error("WebGL 2 not supported");
 
-    // 检查浮点纹理扩展
+    // Check floating-point texture extension
     const ext = gl.getExtension("EXT_color_buffer_float");
     if (!ext) throw new Error("EXT_color_buffer_float not supported");
 
@@ -542,32 +542,32 @@ export class MultiPassRenderer {
   }
 
   /**
-   * 设置全局uniform，将应用于所有渲染通道
-   * @param name uniform名称
-   * @param value uniform值
+   * Set a global uniform applied to all render passes
+   * @param name Uniform name
+   * @param value Uniform value
    */
   public setUniform(name: string, value: any): void {
     this.globalUniforms[name] = value;
   }
 
   /**
-   * 批量设置全局uniforms
-   * @param uniforms uniform对象
+   * Set global uniforms in batch
+   * @param uniforms Uniform object
    */
   public setUniforms(uniforms: Record<string, any>): void {
     Object.assign(this.globalUniforms, uniforms);
   }
 
   /**
-   * 清除特定的全局uniform
-   * @param name uniform名称
+   * Clear a specific global uniform
+   * @param name Uniform name
    */
   public clearUniform(name: string): void {
     delete this.globalUniforms[name];
   }
 
   /**
-   * 清除所有全局uniforms
+   * Clear all global uniforms
    */
   public clearAllUniforms(): void {
     this.globalUniforms = {};
@@ -577,10 +577,10 @@ export class MultiPassRenderer {
     // const gl = this.gl;
 
     this.passesArray.forEach((pass, index) => {
-      // 合并全局uniforms和通道特定uniforms
+      // Merge global uniforms and pass-specific uniforms
       const uniforms: Record<string, any> = { ...this.globalUniforms };
 
-      // 添加通道特定的uniforms（如果有）
+      // Add pass-specific uniforms (if any)
       if (passUniforms) {
         if (Array.isArray(passUniforms)) {
           Object.assign(uniforms, passUniforms[index]);
@@ -589,7 +589,7 @@ export class MultiPassRenderer {
         }
       }
 
-      // 添加输入纹理
+      // Add input textures
       if (pass.config.inputs) {
         Object.entries(pass.config.inputs).forEach(([uniformName, fromPassName]) => {
           const fromPass = this.passes.get(fromPassName);
@@ -599,7 +599,7 @@ export class MultiPassRenderer {
 
       pass.render(uniforms);
 
-      // 渲染后解绑纹理
+      // Unbind textures after render
       // if (index > 0) {
       //   gl.bindTexture(gl.TEXTURE_2D, null);
       // }
@@ -607,29 +607,29 @@ export class MultiPassRenderer {
   }
 
   /**
-     * 清理所有渲染资源
+     * Dispose all render resources
      */
   public dispose(): void {
     const gl = this.gl;
 
-    // 清理所有渲染通道
+    // Dispose all render passes
     this.passes.forEach(pass => {
       pass.dispose();
     });
     this.passes.clear();
     this.clearAllUniforms();
 
-    // 解绑当前绑定的任何缓冲区
+    // Unbind any currently bound buffers
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 }
 
-// 加载外部纹理
+// Load external texture
 export function loadTextureFromURL(gl: WebGL2RenderingContext, url: string): Promise<{ texture: WebGLTexture, ratio: number }> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.crossOrigin = ""; // 可根据需要设为 'anonymous'
+    image.crossOrigin = ""; // Optionally set to 'anonymous' if needed
 
     image.onload = () => {
       const texture = gl.createTexture();
@@ -665,16 +665,16 @@ export function createEmptyTexture(gl: WebGL2RenderingContext): WebGLTexture {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  // 不设置图像数据，留空，后续每帧调用 texImage2D(video) 更新
+  // Leave image data empty; update each frame via texImage2D(video)
 
   return texture;
 }
 
 /**
- * 每帧将视频帧上传至 GPU 纹理。
- * @param gl WebGL2 上下文
- * @param texture WebGLTexture，需要事先 create 并配置好参数
- * @param video HTMLVideoElement，正在播放的视频
+ * Upload the current video frame to a GPU texture each frame.
+ * @param gl WebGL2 context
+ * @param texture WebGLTexture; must be created and configured beforehand
+ * @param video HTMLVideoElement currently playing
  */
 export function updateVideoTexture(
   gl: WebGL2RenderingContext,
@@ -688,7 +688,7 @@ export function updateVideoTexture(
     ratio = 1;
   }
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // 可选：取决于你 shader 中纹理坐标是否上下颠倒
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // Optional: depends on whether your shader UVs are vertically flipped
   gl.texImage2D(
     gl.TEXTURE_2D,
     0,
@@ -706,3 +706,4 @@ export function updateVideoTexture(
     ratio: ratio,
   }
 }
+

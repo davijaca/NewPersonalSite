@@ -51,49 +51,49 @@ export const useLevaControls = ({
         min: 1,
         max: 80,
         step: 0.01,
-        value: 20,
+        value: 80,
       },
       refFactor: {
         label: lang['editor.refFactor'],
         min: 1,
         max: 4,
         step: 0.01,
-        value: 1.4,
+        value: 4,
       },
       refDispersion: {
         label: lang['editor.refDispersion'],
         min: 0,
         max: 50,
         step: 0.01,
-        value: 7,
+        value: 0,
       },
       refFresnelRange: {
         label: lang['editor.refFresnelRange'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 30,
+        value: 60,
       },
       refFresnelHardness: {
         label: lang['editor.refFresnelHardness'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 20,
+        value: 50,
       },
       refFresnelFactor: {
         label: lang['editor.refFresnelFactor'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 20,
+        value: 11,
       },
       glareRange: {
         label: lang['editor.glareRange'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 30,
+        value: 69.37,
       },
       glareHardness: {
         label: lang['editor.glareHardness'],
@@ -114,21 +114,32 @@ export const useLevaControls = ({
         min: 0,
         max: 100,
         step: 0.01,
-        value: 50,
+        value: 100,
       },
       glareOppositeFactor: {
         label: lang['editor.glareOppositeFactor'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 80,
+        value: 61.3,
       },
       glareAngle: {
         label: lang['editor.glareAngle'],
         min: -180,
         max: 180,
         step: 0.01,
-        value: -45,
+        value: 180,
+      },
+      glareAngleAnimate: {
+        label: 'Glare Rotate',
+        value: true,
+      },
+      glareAngleSpeed: {
+        label: 'Glare Speed',
+        min: -180,
+        max: 180,
+        step: 0.1,
+        value: 25,
       },
       blurRadius: {
         label: lang['editor.blurRadius'],
@@ -145,19 +156,22 @@ export const useLevaControls = ({
         label: lang['editor.tint'],
         value: { r: 255, b: 255, g: 255, a: 0 },
       },
+
+      // Shadow Defaults and Settings
+
       shadowExpand: {
         label: lang['editor.shadowExpand'],
         min: 2,
         max: 100,
         step: 0.01,
-        value: 25,
+        value: 15,
       },
       shadowFactor: {
         label: lang['editor.shadowFactor'],
         min: 0,
         max: 100,
         step: 0.01,
-        value: 15,
+        value: 1.5,
       },
       shadowPosition: LevaVectorNew({
         label: lang['editor.shadowPosition'],
@@ -166,6 +180,8 @@ export const useLevaControls = ({
         xMax: 20,
         yMax: 20,
       }),
+
+      
       bgType: LevaContainer({
         label: lang['editor.bgType'],
         contentValue: 2,
@@ -230,13 +246,147 @@ export const useLevaControls = ({
       }, {
         collapsed: true
       }),
-      ['debugSettings']: folder({
-        step: {
-          label: 'Show Step',
-          value: 9,
+      cameraSettings: folder({
+        // Orbit around target (degrees). Theta = horizontal spin, Phi = vertical angle.
+        cameraOrbitTheta: {
+          label: 'Orbit Theta',
+          min: -180,
+          max: 180,
+          step: 0.1,
+          value: 40,
+        },
+        cameraOrbitPhi: {
+          label: 'Orbit Phi',
+          min: 1,
+          max: 179,
+          step: 0.1,
+          value: 70,
+        },
+        // Distance from target (scene units).
+        cameraOrbitRadius: {
+          label: 'Orbit Radius',
+          min: 0.1,
+          max: 20,
+          step: 0.01,
+          value: 3.4,
+        },
+      }, {
+        collapsed: true
+      }),
+      lightingSettings: folder({
+        toneMappingExposure: {
+          label: 'Exposure',
           min: 0,
-          max: 9,
-          step: 1,
+          max: 5,
+          step: 0.01,
+          value: 1.3,
+        },
+        ambientIntensity: {
+          label: 'Ambient Intensity',
+          min: 0,
+          max: 3,
+          step: 0.01,
+          value: 1.25,
+        },
+        hemiIntensity: {
+          label: 'Hemisphere Intensity',
+          min: 0,
+          max: 3,
+          step: 0.01,
+          value: 1.25,
+        },
+        hemiSkyColor: {
+          label: 'Hemisphere Sky',
+          value: { r: 200, g: 220, b: 255 },
+        },
+        hemiGroundColor: {
+          label: 'Hemisphere Ground',
+          value: { r: 180, g: 170, b: 150 },
+        },
+        keyIntensity: {
+          label: 'Key Intensity',
+          min: 0,
+          max: 5,
+          step: 0.01,
+          value: 0.8,
+        },
+        keyColor: {
+          label: 'Key Color',
+          value: { r: 255, g: 245, b: 225 },
+        },
+        keyPosX: {
+          label: 'Key X',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: 6,
+        },
+        keyPosY: {
+          label: 'Key Y',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: 9,
+        },
+        keyPosZ: {
+          label: 'Key Z',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: 4,
+        },
+        fillIntensity: {
+          label: 'Fill Intensity',
+          min: 0,
+          max: 5,
+          step: 0.01,
+          value: 0.25,
+        },
+        fillColor: {
+          label: 'Fill Color',
+          value: { r: 210, g: 220, b: 255 },
+        },
+        fillPosX: {
+          label: 'Fill X',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: -8,
+        },
+        fillPosY: {
+          label: 'Fill Y',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: 4,
+        },
+        fillPosZ: {
+          label: 'Fill Z',
+          min: -20,
+          max: 20,
+          step: 0.1,
+          value: -2,
+        },
+        envMapIntensityScale: {
+          label: 'Env Intensity',
+          min: 0,
+          max: 2,
+          step: 0.01,
+          value: 1,
+        },
+        materialMetalnessScale: {
+          label: 'Metalness Scale',
+          min: 0,
+          max: 1,
+          step: 0.01,
+          value: 0.6,
+        },
+        materialRoughnessBoost: {
+          label: 'Roughness Boost',
+          min: -0.5,
+          max: 0.8,
+          step: 0.01,
+          value: 0.15,
         },
       }, {
         collapsed: true

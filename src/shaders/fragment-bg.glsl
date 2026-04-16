@@ -23,6 +23,8 @@ uniform sampler2D u_bgTexture;
 uniform float u_bgTextureRatio;
 uniform int u_bgTextureReady;
 uniform int u_showShape1;
+uniform float u_refViewportWidth;
+uniform float u_refViewportHeight;
 
 float chessboard(vec2 uv, float size, int mode) {
   float yBars = step(size * 2.0, mod(uv.y * 2.0, size * 4.0));
@@ -72,24 +74,24 @@ float superellipseCornerSDF(vec2 p, float r, float n) {
 }
 
 float roundedRectSDF(vec2 p, vec2 center, float width, float height, float cornerRadius, float n) {
-  // 移动到中心坐标系
+  // Move into centered coordinate space
   p -= center;
 
   float cr = cornerRadius * u_dpr;
 
-  // 计算到矩形边缘的距离
+  // Distance to rectangle edge
   vec2 d = abs(p) - vec2(width * u_dpr, height * u_dpr) * 0.5;
 
-  // 对于边缘区域和角落，我们需要不同的处理
+  // Use separate handling for edges and corners
   float dist;
 
   if (d.x > -cr && d.y > -cr) {
-    // 角落区域
+    // Corner region
     vec2 cornerCenter = sign(p) * (vec2(width * u_dpr, height * u_dpr) * 0.5 - vec2(cr));
     vec2 cornerP = p - cornerCenter;
     dist = superellipseCornerSDF(cornerP, cr, n);
   } else {
-    // 内部和边缘区域
+    // Interior and edge region
     dist = min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
   }
 
@@ -113,39 +115,43 @@ float sdgMin(float a, float b) {
 }
 
 float mainSDF(vec2 p1, vec2 p2, vec2 p) {
-  vec2 p1n = p1 + p / u_resolution.y;
+  float refAspect = u_refViewportWidth / u_refViewportHeight;
+  float layoutScale = (u_resolution.y / u_dpr) / u_refViewportHeight;
+  float virtualWidth = refAspect * u_resolution.y;
+  vec2 pAdjusted = p + vec2((virtualWidth - u_resolution.x) * 0.5, 0.0);
+  vec2 p1n = p1 + pAdjusted / u_resolution.y;
   vec2 p2n = p2 + p / u_resolution.y;
-  float d1 = u_showShape1 == 1 ? sdDShape(p1n, 100.0 * u_dpr / u_resolution.y) : 1.0;
+  float d1 = u_showShape1 == 1 ? sdDShape(p1n, 100.0 * layoutScale * u_dpr / u_resolution.y) : 1.0; // D letter (base shape)
   float d3 =
     u_showShape1 == 1
       ? sdIsoscelesTriangle(
           vec2(
-            p1n.x - 170.0 * u_dpr / u_resolution.y,
-            -(p1n.y - 100.0 * u_dpr / u_resolution.y)
+            p1n.x - 170.0 * layoutScale * u_dpr / u_resolution.y,
+            -(p1n.y - 100.0 * layoutScale * u_dpr / u_resolution.y)
           ),
-          vec2(70.0, 200.0) * (u_dpr / u_resolution.y)
+          vec2(70.0, 200.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // A letter (triangle)
   float d4 =
     u_showShape1 == 1
       ? sdIsoscelesTriangle(
           vec2(
-            p1n.x - 300.0 * u_dpr / u_resolution.y,
-            p1n.y + 102.0 * u_dpr / u_resolution.y
+            p1n.x - 300.0 * layoutScale * u_dpr / u_resolution.y,
+            p1n.y + 102.0 * layoutScale * u_dpr / u_resolution.y
           ),
-          vec2(70.0, 200.0) * (u_dpr / u_resolution.y)
+          vec2(70.0, 200.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // V letter (triangle)
   float d5 =
     u_showShape1 == 1
       ? sdBox(
           vec2(
-            p1n.x - 430.0 * u_dpr / u_resolution.y,
+            p1n.x - 430.0 * layoutScale * u_dpr / u_resolution.y,
             p1n.y - 0.0 * u_dpr / u_resolution.y
           ),
-          vec2(20.0, 100.0) * (u_dpr / u_resolution.y)
+          vec2(20.0, 100.0) * (layoutScale * u_dpr / u_resolution.y)
         )
-      : 1.0;
+      : 1.0; // I letter (vertical box)
   // float d2 = sdSuperellipse(p2, 200.0 / u_resolution.y, 4.0).x;
   float d2Radius = min(u_shapeWidth, u_shapeHeight) * 0.125 / u_resolution.y;
   float d2 = sdCircle(p2n, d2Radius);
@@ -153,15 +159,15 @@ float mainSDF(vec2 p1, vec2 p2, vec2 p) {
   return smin(smin(smin(smin(d1, d3, u_mergeRate), d4, u_mergeRate), d5, u_mergeRate), d2, u_mergeRate);
 }
 
-// 输入：原始 uv、canvas 宽高比、纹理宽高比
-// 输出：变换后的 uv，可直接用于 texture 采样
+// Input: original UV, canvas aspect ratio, texture aspect ratio
+// Output: transformed UV for direct texture sampling
 vec2 getCoverUV(vec2 uv, float canvasAspect, float textureAspect) {
   if (canvasAspect > textureAspect) {
-    // canvas 更宽，纹理竖向拉伸
+    // Canvas is wider: scale texture vertically
     float scale = textureAspect / canvasAspect;
     uv.y = uv.y * scale + 0.5 - 0.5 * scale;
   } else {
-    // canvas 更高，纹理横向拉伸
+    // Canvas is taller: scale texture horizontally
     float scale = canvasAspect / textureAspect;
     uv.x = uv.x * scale + 0.5 - 0.5 * scale;
   }
@@ -170,6 +176,9 @@ vec2 getCoverUV(vec2 uv, float canvasAspect, float textureAspect) {
 
 void main() {
   vec2 u_resolution1x = u_resolution.xy / u_dpr;
+  float refAspect = u_refViewportWidth / u_refViewportHeight;
+  float layoutScale = u_resolution1x.y / u_refViewportHeight;
+  float virtualWidth = refAspect * u_resolution.y;
   // float chessboardBg = chessboard(gl_FragCoord.xy, 14.0);
   vec3 bgColor = vec3(1.0);
 
@@ -186,14 +195,14 @@ void main() {
     }
   } else if (u_bgType <= 2) {
     bgColor = vec3(halfColor(gl_FragCoord.xy / u_resolution) * 0.6 + 0.3);
-  } else if (u_bgType <= 11) {
+  } else if (u_bgType <= 13) {
     if (u_bgTextureReady != 1) {
       // chessboard
       bgColor = vec3(1.0 - chessboard(gl_FragCoord.xy / u_dpr, 20.0, 2) / 4.0);
     } else {
       vec2 uv = getCoverUV(v_uv, u_resolution.x / u_resolution.y, u_bgTextureRatio);
 
-      // 不需要判断越界，CLAMP_TO_EDGE 会自动处理
+      // No out-of-bounds check needed; CLAMP_TO_EDGE handles it
       bgColor = texture(u_bgTexture, uv).rgb;
     }
   }
@@ -202,10 +211,10 @@ void main() {
   // float halfColorBg = halfColor(gl_FragCoord.xy / u_resolution);
 
   // draw shadow
-  // center of shape 1
+  // center of shape 1 (group anchor for D/A/V/I shadow)
   vec2 p1 =
-    (vec2(800, 0) -
-      u_resolution.xy * 0.5 +
+    (vec2(630.0 * layoutScale * u_dpr, 0.0) -
+      vec2(virtualWidth * 0.5, u_resolution.y * 0.5) +
       vec2(u_shadowPosition.x * u_dpr, u_shadowPosition.y * u_dpr)) /
     u_resolution.y;
   // center of shape 2
@@ -219,3 +228,4 @@ void main() {
 
   fragColor = vec4(bgColor - vec3(shadow), 1.0);
 }
+

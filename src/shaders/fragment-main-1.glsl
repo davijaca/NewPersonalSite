@@ -165,11 +165,11 @@ void main() {
 
   // float px = 2.0/u_resolution.y;
   // vec3 col = (merged>0.0) ? vec3(0.9,0.6,0.3) : vec3(0.65,0.85,1.0);
-  // // 阴影
+  // // Shadow
   // col *= 1.0 - exp(-0.03*abs(merged) * u_resolution.y);
-  // // 等高线
+  // // Contour lines
   // col *= 0.6 + 0.4*smoothstep(-0.5,0.5,cos(0.25 *abs(merged) * u_resolution.y));
-  // // 外层白框
+  // // Outer white outline
   // col = mix( col, vec3(1.0), 1.0-smoothstep(0.003-px,0.003+px,abs(merged)));
   // fragColor = vec4(col,1.0);
 
@@ -246,11 +246,11 @@ void main() {
 
   // float px = 2.0 / u_resolution.y;
   // vec3 col = merged > 0.0 ? vec3(0.9, 0.6, 0.3) : vec3(0.65, 0.85, 1.0);
-  // // 阴影
+  // // Shadow
   // col *= 1.0 - exp(-0.03 * abs(merged) * u_resolution.y);
-  // // 等高线
+  // // Contour lines
   // col *= 0.6 + 0.4 * smoothstep(-0.5, 0.5, cos(0.25 * abs(merged) * u_resolution.y));
-  // // 外层白框
+  // // Outer white outline
   // col = mix(col, vec3(1.0), 1.0 - smoothstep(0.003 - px, 0.003 + px, abs(merged)));
 
   // float edgeEffect = pow(clamp(1.0 + merged * u_refEdge * u_resolution.y, 0.0, 1.0), 2.0);
@@ -299,3 +299,4 @@ void main() {
   // }
 
 }
+
