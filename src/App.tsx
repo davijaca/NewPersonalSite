@@ -20,7 +20,7 @@ import bgText from '@/assets/bg-text.jpg';
 import bgBuildings from '@/assets/bg-buildings.png';
 import bgVideoFish from '@/assets/bg-video-fish.mp4';
 import bgVideo2 from '@/assets/bg-video-2.mp4';
-import bgVideo3 from '@/assets/bg-video-3.mp4';
+import bgVideo4 from '@/assets/bg-video-4.mp4';
 import bgMoon from '@/assets/bg-moon.mp4';
 import bgStars from '@/assets/bg-stars.mp4';
 
@@ -32,7 +32,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import gsap from 'gsap';
+import { LiquidGlassBubble } from './components/LiquidGlassBubble';
 
 const ScreenVertexShader = `
 precision highp float;
@@ -44,80 +44,29 @@ void main() {
 }
 `;
 
-type GlassConfig = {
-  width: number;
-  height: number;
-  radius: number;
-  border: number;
-  alpha: number;
-  lightness: number;
-  blur: number;
-  scale: number;
-  r: number;
-  g: number;
-  b: number;
-  displace: number;
-  frost: number;
-  saturation: number;
-  blend: string;
-  x: 'R' | 'G' | 'B';
-  y: 'R' | 'G' | 'B';
-};
+const contentBubbles = [
+  { x: -265, y: 0, size: 1 },
+  { x: 180, y: 160, size: 0.82 },
+  { x: -40, y: 330, size: 1.18 },
+  { x: 285, y: 520, size: 0.95 },
+  { x: -320, y: 720, size: 1.42 },
+  { x: 95, y: 910, size: 1.08 },
+  { x: -170, y: 1120, size: 0.74 },
+  { x: 250, y: 1340, size: 1.28 },
+  { x: -285, y: 1580, size: 0.9 },
+  { x: 20, y: 1840, size: 1.5 },
+];
 
-const glassConfig: GlassConfig = {
-  width: 140,
-  height: 140,
-  radius: 70,
-  border: 0.07,
-  alpha: 0.93,
-  lightness: 50,
-  blur: 11,
-  scale: -180,
-  r: 0,
-  g: 10,
-  b: 20,
-  displace: 0,
-  frost: 0,
-  saturation: 1,
-  blend: 'difference',
-  x: 'R',
-  y: 'B',
-};
-
-const buildDisplacementMarkup = (config: GlassConfig) => {
-  const border = Math.min(config.width, config.height) * (config.border * 0.5);
-
-  return `<svg class="displacement-image" viewBox="0 0 ${config.width} ${config.height}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="red" x1="100%" y1="0%" x2="0%" y2="0%">
-      <stop offset="0%" stop-color="#000"/>
-      <stop offset="100%" stop-color="red"/>
-    </linearGradient>
-    <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#000"/>
-      <stop offset="100%" stop-color="blue"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="${config.width}" height="${config.height}" fill="black"></rect>
-  <rect x="0" y="0" width="${config.width}" height="${config.height}" rx="${config.radius}" fill="url(#red)" />
-  <rect x="0" y="0" width="${config.width}" height="${config.height}" rx="${config.radius}" fill="url(#blue)" style="mix-blend-mode: ${config.blend}" />
-  <rect x="${border}" y="${Math.min(config.width, config.height) * (config.border * 0.5)}" width="${config.width - border * 2}" height="${config.height - border * 2}" rx="${config.radius}" fill="hsl(0 0% ${config.lightness}% / ${config.alpha})" style="filter:blur(${config.blur}px)" />
-</svg>`;
-};
-
+const getBubbleSidePosition = (index: number) =>
+  index % 2 === 0 ? 'calc(-50vw + 96px)' : 'calc(50vw - 96px)';
 
 function App() {
   const baseViewportWidthRef = useRef(window.innerWidth);
   const baseViewportHeightRef = useRef(window.innerHeight);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollSectionRef = useRef<HTMLElement>(null);
-  const glassEffectRef = useRef<HTMLDivElement>(null);
-  const displacementDebugRef = useRef<HTMLDivElement>(null);
-  const glassFeImageRef = useRef<SVGFEImageElement>(null);
-  const redChannelRef = useRef<SVGFEDisplacementMapElement>(null);
-  const greenChannelRef = useRef<SVGFEDisplacementMapElement>(null);
-  const blueChannelRef = useRef<SVGFEDisplacementMapElement>(null);
-  const outputBlurRef = useRef<SVGFEGaussianBlurElement>(null);
+  const contentStackRef = useRef<HTMLDivElement>(null);
+  const contentStackReleaseRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const hasFinishedInitialLoad = useRef(false);
@@ -127,6 +76,9 @@ function App() {
     dpr: window.devicePixelRatio,
   });
   const [showControls, setShowControls] = useState(false);
+  const [areContentBubblesVisible, setAreContentBubblesVisible] = useState(true);
+  const [areContentBubblesFrozen, setAreContentBubblesFrozen] = useState(false);
+  const [areContentBubblesAtSides, setAreContentBubblesAtSides] = useState(false);
   const { controls, langName, levaGlobal } = useLevaControls({
     hideLeva: !showControls || isLoading,
     containerRender: {
@@ -151,7 +103,7 @@ function App() {
               { v: 7, media: bgUI, loadTexture: true },
               { v: 8, media: bgVideoFish, loadTexture: true, type: 'video' as const },
               { v: 9, media: bgVideo2, loadTexture: true, type: 'video' as const },
-              { v: 10, media: bgVideo3, loadTexture: true, type: 'video' as const },
+              { v: 10, media: bgVideo4, loadTexture: true, type: 'video' as const },
               { v: 12, media: bgMoon, loadTexture: true, type: 'video' as const },
               { v: 13, media: bgStars, loadTexture: true, type: 'video' as const },
             ].map(({ v, media, loadTexture, type }) => {
@@ -265,101 +217,6 @@ function App() {
       /* eslint-enable react-hooks/rules-of-hooks */
     },
   });
-
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-
-    const effect = glassEffectRef.current;
-    const debug = displacementDebugRef.current;
-    const feImage = glassFeImageRef.current;
-    const redChannel = redChannelRef.current;
-    const greenChannel = greenChannelRef.current;
-    const blueChannel = blueChannelRef.current;
-    const outputBlur = outputBlurRef.current;
-
-    if (
-      !effect ||
-      !debug ||
-      !feImage ||
-      !redChannel ||
-      !greenChannel ||
-      !blueChannel ||
-      !outputBlur
-    ) {
-      return;
-    }
-
-    const buildDisplacementImage = () => {
-      debug.innerHTML = buildDisplacementMarkup(glassConfig);
-      const svgEl = debug.querySelector('.displacement-image');
-      if (!svgEl) {
-        return;
-      }
-
-      const serialized = new XMLSerializer().serializeToString(svgEl);
-      const dataUri = `data:image/svg+xml,${encodeURIComponent(serialized)}`;
-      feImage.setAttribute('href', dataUri);
-
-      for (const channel of [redChannel, greenChannel, blueChannel]) {
-        channel.setAttribute('xChannelSelector', glassConfig.x);
-        channel.setAttribute('yChannelSelector', glassConfig.y);
-      }
-
-      redChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.r}`);
-      greenChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.g}`);
-      blueChannel.setAttribute('scale', `${glassConfig.scale + glassConfig.b}`);
-      outputBlur.setAttribute('stdDeviation', `${glassConfig.displace}`);
-    };
-
-    effect.style.setProperty('--width', `${glassConfig.width}`);
-    effect.style.setProperty('--height', `${glassConfig.height}`);
-    effect.style.setProperty('--radius', `${glassConfig.radius}`);
-    effect.style.setProperty('--frost', `${glassConfig.frost}`);
-    effect.style.setProperty('--saturation', `${glassConfig.saturation}`);
-
-    buildDisplacementImage();
-    gsap.set(effect, {
-      opacity: 1,
-    });
-
-    let parallaxFrame = 0;
-    const updateBubbleParallax = () => {
-      parallaxFrame = 0;
-      const sectionRect = scrollSectionRef.current?.getBoundingClientRect();
-      if (!sectionRect) {
-        return;
-      }
-
-      const viewportCenter = window.innerHeight * 0.5;
-      const sectionCenter = sectionRect.top + sectionRect.height * 0.5;
-      const distance = sectionCenter - viewportCenter;
-      const parallaxY = distance * -0.08;
-      effect.style.setProperty('--bubble-parallax-y', `${parallaxY}px`);
-    };
-
-    const requestBubbleParallax = () => {
-      if (parallaxFrame) {
-        return;
-      }
-
-      parallaxFrame = requestAnimationFrame(updateBubbleParallax);
-    };
-
-    window.addEventListener('scroll', requestBubbleParallax, { passive: true });
-    window.addEventListener('resize', requestBubbleParallax);
-    updateBubbleParallax();
-
-    return () => {
-      cancelAnimationFrame(parallaxFrame);
-      window.removeEventListener('scroll', requestBubbleParallax);
-      window.removeEventListener('resize', requestBubbleParallax);
-      gsap.set(effect, {
-        opacity: 0,
-      });
-    };
-  }, [isLoading]);
 
   const stateRef = useRef<{
     renderRaf: number | null;
@@ -505,6 +362,48 @@ function App() {
     document.body.classList.toggle('app-loading', isLoading);
     return () => {
       document.body.classList.remove('app-loading');
+    };
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    let stackFrame = 0;
+
+    const updateStackRelease = () => {
+      stackFrame = 0;
+      const stack = contentStackRef.current;
+      const release = contentStackReleaseRef.current;
+      if (!stack || !release) {
+        return;
+      }
+
+      const releaseRect = release.getBoundingClientRect();
+      const start = window.innerHeight * 0.72;
+      const end = window.innerHeight * 0.18;
+      const progress = Math.min(1, Math.max(0, (start - releaseRect.top) / (start - end)));
+      const translateY = -progress * window.innerHeight * 0.52;
+      stack.style.setProperty('--stack-release-y', `${translateY}px`);
+    };
+
+    const requestStackRelease = () => {
+      if (stackFrame) {
+        return;
+      }
+
+      stackFrame = requestAnimationFrame(updateStackRelease);
+    };
+
+    window.addEventListener('scroll', requestStackRelease, { passive: true });
+    window.addEventListener('resize', requestStackRelease);
+    updateStackRelease();
+
+    return () => {
+      cancelAnimationFrame(stackFrame);
+      window.removeEventListener('scroll', requestStackRelease);
+      window.removeEventListener('resize', requestStackRelease);
     };
   }, [isLoading]);
 
@@ -1365,214 +1264,251 @@ function App() {
       {!isLoading && (
         <>
           <main ref={scrollSectionRef} className={styles.scrollSection}>
-            <section className={styles.placeholder}>
-              <div className={styles.dockPlaceholder} />
+            <section className={styles.stackingSection}>
+              <section className={styles.placeholder}>
+                <div className={styles.dockPlaceholder} />
+                {areContentBubblesVisible &&
+                  contentBubbles.map((bubble, index) => (
+                    <LiquidGlassBubble
+                      key={index}
+                      float={!areContentBubblesFrozen}
+                      size={bubble.size}
+                      startingPosition={{
+                        x: areContentBubblesAtSides ? getBubbleSidePosition(index) : bubble.x,
+                        y: bubble.y,
+                      }}
+                    />
+                  ))}
+              </section>
+              <div className={styles.bubbleControlDockSticky}>
+                <LiquidGlassBubble
+                  className={styles.bubbleControlDockGlass}
+                  config={{
+                    width: 430,
+                    height: 118,
+                    radius: 22,
+                    border: 0.035,
+                    blur: 9,
+                    scale: -120,
+                    frost: 0,
+                    saturation: 1.05,
+                  }}
+                  draggable={false}
+                  float={false}
+                >
+                  <div className={styles.bubbleControlDock}>
+                    <div className={styles.bubbleControlHeader}>
+                      <span>Bubble controls</span>
+                      <strong>UI draft</strong>
+                    </div>
+                    <div className={styles.bubbleControlApps}>
+                      <button
+                        className={styles.bubbleControlApp}
+                        type="button"
+                        onClick={() => setAreContentBubblesVisible((value) => !value)}
+                      >
+                        <span
+                          className={clsx(
+                            styles.bubbleControlIcon,
+                            styles.bubbleControlIconGrid,
+                          )}
+                        />
+                        <span>{areContentBubblesVisible ? 'Hide' : 'Show'}</span>
+                        <strong>{areContentBubblesVisible ? 'Visible' : 'Hidden'}</strong>
+                      </button>
+                      <button
+                        className={styles.bubbleControlApp}
+                        type="button"
+                        onClick={() => setAreContentBubblesFrozen((value) => !value)}
+                      >
+                        <span
+                          className={clsx(
+                            styles.bubbleControlIcon,
+                            styles.bubbleControlIconFloat,
+                          )}
+                        />
+                        <span>{areContentBubblesFrozen ? 'Float' : 'Freeze'}</span>
+                        <strong>{areContentBubblesFrozen ? 'Stopped' : 'Moving'}</strong>
+                      </button>
+                      <button
+                        className={styles.bubbleControlApp}
+                        type="button"
+                        onClick={() => setAreContentBubblesAtSides((value) => !value)}
+                      >
+                        <span
+                          className={clsx(
+                            styles.bubbleControlIcon,
+                            styles.bubbleControlIconSpread,
+                          )}
+                        />
+                        <span>{areContentBubblesAtSides ? 'Center' : 'Sides'}</span>
+                        <strong>{areContentBubblesAtSides ? 'Edges' : 'Mixed'}</strong>
+                      </button>
+                      {[
+                        { label: 'Size', value: '150%', icon: 'scale' },
+                        { label: 'Drag', value: 'On', icon: 'drag' },
+                      ].map((item) => (
+                        <button key={item.label} className={styles.bubbleControlApp} type="button">
+                          <span
+                            className={clsx(
+                              styles.bubbleControlIcon,
+                              styles[`bubbleControlIcon${capitalize(item.icon)}`],
+                            )}
+                          />
+                          <span>{item.label}</span>
+                          <strong>{item.value}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </LiquidGlassBubble>
+              </div>
+
+              <div ref={contentStackRef} className={styles.contentStack}>
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>Portfolio</p>
+                <h2>Davi Bentim</h2>
+                <p className={styles.lead}>Web Developer / UI UX Designer</p>
+                <ul className={styles.metaList}>
+                  <li>
+                    <span>Full Name</span>
+                    Davi Martins Bentim
+                  </li>
+                  <li>
+                    <span>Phone</span>
+                    +1 (208) 750-8500
+                  </li>
+                  <li>
+                    <span>Email</span>
+                    davi.bentim@gmail.com
+                  </li>
+                  <li>
+                    <span>GitHub</span>
+                    github.com/davijaca
+                  </li>
+                </ul>
+              </section>
+
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>About</p>
+                <h2>Full stack craft with a design eye</h2>
+                <p>
+                  Davi Martins Bentim is a Brazilian full stack web developer and UI/UX designer
+                  currently living in the United States, with a passion for creating beautiful and
+                  functional websites.
+                </p>
+                <p>
+                  He completed the MIT xPro MERN Stack Development program in 2022 and is currently
+                  pursuing a Bachelor's degree in Web Development at the University of Europe for
+                  Applied Sciences. He has been working as a freelance developer and designer and is
+                  employed at Smatched (Heidelberg, Germany) since August 2023.
+                </p>
+              </section>
+
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>Experience</p>
+                <h2>Recent roles</h2>
+                <div className={styles.timeline}>
+                  <article className={styles.timelineItem}>
+                    <h3>Lead Project Manager</h3>
+                    <p>Smatched - 2023 to present</p>
+                    <ul>
+                      <li>Led rebuilds of smatched.io and offerwallmonetization.com.</li>
+                      <li>Coordinated with SEO and design teams to align deliverables.</li>
+                      <li>Managed a team of up to five interns and ensured on-time delivery.</li>
+                      <li>Maintained quality standards and project requirements.</li>
+                    </ul>
+                  </article>
+                  <article className={styles.timelineItem}>
+                    <h3>Front End Web Developer</h3>
+                    <p>Smatched - 2023 to present</p>
+                    <ul>
+                      <li>Migrated Smatched from WordPress/Elementor to React.</li>
+                      <li>Managed GitHub and GitLab repositories and documentation.</li>
+                      <li>Performed code reviews and provided technical support.</li>
+                    </ul>
+                  </article>
+                  <article className={styles.timelineItem}>
+                    <h3>Freelance Full Stack Developer</h3>
+                    <p>Self-employed - 2020 to present</p>
+                    <ul>
+                      <li>
+                        Built and maintained websites for small businesses in the Brazilian community
+                        in the Salt Lake City area.
+                      </li>
+                    </ul>
+                  </article>
+                </div>
+              </section>
+
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>Education</p>
+                <h2>Training and credentials</h2>
+                <ul className={styles.simpleList}>
+                  <li>
+                    University of Europe for Applied Sciences - Bachelor's Degree (2023 to present),
+                    Game Design BA, second semester online
+                  </li>
+                  <li>
+                    Massachusetts Institute of Technology - MERN Stack Development (2021 to 2022),
+                    highest grades across projects including the capstone, 3.7 GPA
+                  </li>
+                  <li>EEEM Padre Reus - High School (2010)</li>
+                </ul>
+              </section>
+
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>Skills</p>
+                <h2>Tools and strengths</h2>
+                <div className={styles.skillGrid}>
+                  <div>HTML5 - 95%</div>
+                  <div>CSS3 - 95%</div>
+                  <div>React.js - 90%</div>
+                  <div>JavaScript - 90%</div>
+                  <div>MongoDB - 85%</div>
+                  <div>WordPress - 90%</div>
+                  <div>UI/UX - 90%</div>
+                  <div>Design - 90%</div>
+                  <div>Figma - 70%</div>
+                </div>
+              </section>
+
+              <section className={styles.contentPanel}>
+                <p className={styles.sectionEyebrow}>Hire Me</p>
+                <h2>Open to new opportunities and freelance work</h2>
+                <p>Contact me to discuss projects and collaborations.</p>
+                <div className={styles.contactGrid}>
+                  <div>
+                    <strong>Phone</strong>
+                    <span>+1 (208) 750-8500</span>
+                  </div>
+                  <div>
+                    <strong>Email</strong>
+                    <span>davi.bentim@gmail.com</span>
+                  </div>
+                  <div>
+                    <strong>GitHub</strong>
+                    <span>github.com/davijaca</span>
+                  </div>
+                </div>
+              </section>
+
               <div
-                ref={glassEffectRef}
-                className={styles.effect}
-              >
-                <div className={styles.navWrap} />
-                <svg className={styles.filter} xmlns="http://www.w3.org/2000/svg">
-                  <defs>
-                    <filter id="filter" colorInterpolationFilters="sRGB">
-                      <feImage
-                        ref={glassFeImageRef}
-                        x="0"
-                        y="0"
-                        width="100%"
-                        height="100%"
-                        result="map"
-                      />
-                      <feDisplacementMap
-                        ref={redChannelRef}
-                        in="SourceGraphic"
-                        in2="map"
-                        id="redchannel"
-                        xChannelSelector="R"
-                        yChannelSelector="B"
-                        result="dispRed"
-                      />
-                      <feColorMatrix
-                        in="dispRed"
-                        type="matrix"
-                        values="1 0 0 0 0
-                                0 0 0 0 0
-                                0 0 0 0 0
-                                0 0 0 1 0"
-                        result="red"
-                      />
-                      <feDisplacementMap
-                        ref={greenChannelRef}
-                        in="SourceGraphic"
-                        in2="map"
-                        id="greenchannel"
-                        xChannelSelector="R"
-                        yChannelSelector="B"
-                        result="dispGreen"
-                      />
-                      <feColorMatrix
-                        in="dispGreen"
-                        type="matrix"
-                        values="0 0 0 0 0
-                                0 1 0 0 0
-                                0 0 0 0 0
-                                0 0 0 1 0"
-                        result="green"
-                      />
-                      <feDisplacementMap
-                        ref={blueChannelRef}
-                        in="SourceGraphic"
-                        in2="map"
-                        id="bluechannel"
-                        xChannelSelector="R"
-                        yChannelSelector="B"
-                        result="dispBlue"
-                      />
-                      <feColorMatrix
-                        in="dispBlue"
-                        type="matrix"
-                        values="0 0 0 0 0
-                                0 0 0 0 0
-                                0 0 1 0 0
-                                0 0 0 1 0"
-                        result="blue"
-                      />
-                      <feBlend in="red" in2="green" mode="screen" result="rg" />
-                      <feBlend in="rg" in2="blue" mode="screen" result="output" />
-                      <feGaussianBlur ref={outputBlurRef} in="output" stdDeviation="0.7" />
-                    </filter>
-                  </defs>
-                </svg>
-                <div ref={displacementDebugRef} className={styles.displacementDebug} />
+                ref={contentStackReleaseRef}
+                className={styles.contentStackSentinel}
+                aria-hidden="true"
+              />
+
               </div>
             </section>
 
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>Portfolio</p>
-              <h2>Davi Bentim</h2>
-              <p className={styles.lead}>Web Developer / UI UX Designer</p>
-              <ul className={styles.metaList}>
-                <li>
-                  <span>Full Name</span>
-                  Davi Martins Bentim
-                </li>
-                <li>
-                  <span>Phone</span>
-                  +1 (208) 750-8500
-                </li>
-                <li>
-                  <span>Email</span>
-                  davi.bentim@gmail.com
-                </li>
-                <li>
-                  <span>GitHub</span>
-                  github.com/davijaca
-                </li>
-              </ul>
-            </section>
-
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>About</p>
-              <h2>Full stack craft with a design eye</h2>
+            <section className={styles.normalScrollSection}>
+              <p className={styles.sectionEyebrow}>Next</p>
+              <h2>Normal scrolling resumes here</h2>
               <p>
-                Davi Martins Bentim is a Brazilian full stack web developer and UI/UX designer
-                currently living in the United States, with a passion for creating beautiful and
-                functional websites.
+                This placeholder section is outside the stacked-card sequence. It can become the
+                next portfolio area, a project gallery, or a contact section later.
               </p>
-              <p>
-                He completed the MIT xPro MERN Stack Development program in 2022 and is currently
-                pursuing a Bachelor's degree in Web Development at the University of Europe for
-                Applied Sciences. He has been working as a freelance developer and designer and is
-                employed at Smatched (Heidelberg, Germany) since August 2023.
-              </p>
-            </section>
-
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>Experience</p>
-              <h2>Recent roles</h2>
-              <div className={styles.timeline}>
-                <article className={styles.timelineItem}>
-                  <h3>Lead Project Manager</h3>
-                  <p>Smatched - 2023 to present</p>
-                  <ul>
-                    <li>Led rebuilds of smatched.io and offerwallmonetization.com.</li>
-                    <li>Coordinated with SEO and design teams to align deliverables.</li>
-                    <li>Managed a team of up to five interns and ensured on-time delivery.</li>
-                    <li>Maintained quality standards and project requirements.</li>
-                  </ul>
-                </article>
-                <article className={styles.timelineItem}>
-                  <h3>Front End Web Developer</h3>
-                  <p>Smatched - 2023 to present</p>
-                  <ul>
-                    <li>Migrated Smatched from WordPress/Elementor to React.</li>
-                    <li>Managed GitHub and GitLab repositories and documentation.</li>
-                    <li>Performed code reviews and provided technical support.</li>
-                  </ul>
-                </article>
-                <article className={styles.timelineItem}>
-                  <h3>Freelance Full Stack Developer</h3>
-                  <p>Self-employed - 2020 to present</p>
-                  <ul>
-                    <li>
-                      Built and maintained websites for small businesses in the Brazilian community
-                      in the Salt Lake City area.
-                    </li>
-                  </ul>
-                </article>
-              </div>
-            </section>
-
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>Education</p>
-              <h2>Training and credentials</h2>
-              <ul className={styles.simpleList}>
-                <li>
-                  University of Europe for Applied Sciences - Bachelor's Degree (2023 to present),
-                  Game Design BA, second semester online
-                </li>
-                <li>
-                  Massachusetts Institute of Technology - MERN Stack Development (2021 to 2022),
-                  highest grades across projects including the capstone, 3.7 GPA
-                </li>
-                <li>EEEM Padre Reus - High School (2010)</li>
-              </ul>
-            </section>
-
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>Skills</p>
-              <h2>Tools and strengths</h2>
-              <div className={styles.skillGrid}>
-                <div>HTML5 - 95%</div>
-                <div>CSS3 - 95%</div>
-                <div>React.js - 90%</div>
-                <div>JavaScript - 90%</div>
-                <div>MongoDB - 85%</div>
-                <div>WordPress - 90%</div>
-                <div>UI/UX - 90%</div>
-                <div>Design - 90%</div>
-                <div>Figma - 70%</div>
-              </div>
-            </section>
-
-            <section className={styles.contentPanel}>
-              <p className={styles.sectionEyebrow}>Hire Me</p>
-              <h2>Open to new opportunities and freelance work</h2>
-              <p>Contact me to discuss projects and collaborations.</p>
-              <div className={styles.contactGrid}>
-                <div>
-                  <strong>Phone</strong>
-                  <span>+1 (208) 750-8500</span>
-                </div>
-                <div>
-                  <strong>Email</strong>
-                  <span>davi.bentim@gmail.com</span>
-                </div>
-                <div>
-                  <strong>GitHub</strong>
-                  <span>github.com/davijaca</span>
-                </div>
-              </div>
             </section>
           </main>
         </>

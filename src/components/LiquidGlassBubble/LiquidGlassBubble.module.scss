@@ -1,0 +1,86 @@
+.effect {
+  --bubble-x: 0px;
+  --bubble-y: 0px;
+  --bubble-drag-x: 0px;
+  --bubble-drag-y: 0px;
+  --bubble-float-x: 0px;
+  --bubble-float-y: 0px;
+  --bubble-parallax-y: 0px;
+
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  width: calc(var(--width) * 1px);
+  height: calc(var(--height) * 1px);
+  border-radius: calc(var(--radius) * 1px);
+  background: hsl(0 0% 100% / var(--frost, 0));
+  backdrop-filter: var(--filter-url) saturate(var(--saturation, 1));
+  -webkit-backdrop-filter: var(--filter-url) saturate(var(--saturation, 1));
+  box-shadow:
+    0 0 2px 1px rgba(255, 255, 255, 0.18) inset,
+    0 0 10px 4px rgba(255, 255, 255, 0.1) inset,
+    0 4px 16px rgba(0, 0, 0, 0.16),
+    0 8px 24px rgba(0, 0, 0, 0.16),
+    0 16px 56px rgba(0, 0, 0, 0.18),
+    0 4px 16px rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px rgba(255, 255, 255, 0.035) inset,
+    0 16px 56px rgba(255, 255, 255, 0.03) inset;
+  transform: translate3d(
+    calc(-50% + var(--bubble-x) + var(--bubble-drag-x) + var(--bubble-float-x)),
+    calc(
+      var(--bubble-y) + var(--bubble-drag-y) + var(--bubble-float-y) +
+        var(--bubble-parallax-y)
+    ),
+    0
+  );
+  transition: opacity 0.26s ease-out;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
+}
+
+.effectDraggable {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.effectReady {
+  opacity: 1;
+}
+
+.navWrap {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.filter {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.displacementDebug {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  overflow: hidden;
+}

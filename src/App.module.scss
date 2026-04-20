@@ -305,67 +305,19 @@
   isolation: isolate;
 }
 
-.effect {
-  --bubble-parallax-y: 0px;
-
-  opacity: 0;
-  position: absolute;
-  inset: 0;
+.stackingSection {
+  position: relative;
   z-index: 1;
-  width: calc(var(--width) * 1px);
-  height: calc(var(--height) * 1px);
-  border-radius: calc(var(--radius) * 1px);
-  background: hsl(0 0% 100% / var(--frost, 0));
-  backdrop-filter: url(#filter) saturate(var(--saturation, 1));
-  box-shadow:
-    0 0 2px 1px rgba(255, 255, 255, 0.18) inset,
-    0 0 10px 4px rgba(255, 255, 255, 0.1) inset,
-    0 4px 16px rgba(0, 0, 0, 0.16),
-    0 8px 24px rgba(0, 0, 0, 0.16),
-    0 16px 56px rgba(0, 0, 0, 0.18),
-    0 4px 16px rgba(255, 255, 255, 0.04) inset,
-    0 8px 24px rgba(255, 255, 255, 0.035) inset,
-    0 16px 56px rgba(255, 255, 255, 0.03) inset;
-  transform: translate3d(0, var(--bubble-parallax-y), 0);
-  transition: opacity 0.26s ease-out;
-  will-change: transform;
-
-  * {
-    pointer-events: none;
-  }
-}
-
-.navWrap {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  border-radius: inherit;
-}
-
-.filter {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.displacementDebug {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: 0;
-  overflow: hidden;
 }
 
 .placeholder {
-  position: absolute;
-  top: 165px;
-  left: calc(50% + 220px);
-  width: 140px;
-  height: 140px;
-  margin: 0;
+  position: sticky;
+  top: 0;
+  left: 50%;
+  height: 100vh;
+  width: min(880px, calc(100vw - 40px));
+  margin: -365px auto calc(-100vh + 365px);
+  overflow: visible;
   pointer-events: none;
   transform: translate3d(-50%, 0, 0);
   z-index: 2;
@@ -381,11 +333,233 @@
   translate: -50% -50%;
 }
 
-.contentPanel {
+.bubbleControlDockGlass {
+  z-index: 4;
+  background: transparent;
+  box-shadow:
+    0 0 2px 1px rgba(255, 255, 255, 0.16) inset,
+    0 0 16px rgba(255, 255, 255, 0.035) inset,
+    0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.bubbleControlDockSticky {
+  position: sticky;
+  top: calc(100vh - 142px);
+  z-index: 5;
+  width: min(430px, calc(100vw - 32px));
+  height: 118px;
+  margin: 0 16px -118px auto;
+  pointer-events: none;
+}
+
+.bubbleControlDockSticky .bubbleControlDockGlass {
+  top: 0;
+  left: 50%;
+}
+
+.bubbleControlDock {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 14px 16px 16px;
+  border-radius: 22px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.025) inset;
+}
+
+.bubbleControlHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+
+  span {
+    color: rgba(255, 255, 255, 0.74);
+  }
+
+  strong {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 10px;
+  }
+}
+
+.bubbleControlApps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bubbleControlApp {
+  display: grid;
+  grid-template-rows: 34px auto auto;
+  align-items: center;
+  justify-items: center;
+  min-width: 0;
+  padding: 6px 4px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 10px 22px rgba(0, 0, 0, 0.06);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  span,
+  strong {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  strong {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.42);
+  }
+}
+
+.bubbleControlIcon {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.08)),
+    transparent;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 8px 18px rgba(0, 0, 0, 0.08);
+}
+
+.bubbleControlIconGrid::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  background:
+    radial-gradient(circle, #111 0 2px, transparent 3px) 0 0 / 8px 8px,
+    radial-gradient(circle, #111 0 2px, transparent 3px) 4px 4px / 8px 8px;
+  opacity: 0.52;
+}
+
+.bubbleControlIconScale::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 2px solid rgba(0, 0, 0, 0.48);
+  border-radius: 999px;
+}
+
+.bubbleControlIconSpread::before {
+  content: '';
+  position: absolute;
+  inset: 7px 6px;
+  background:
+    radial-gradient(circle, #111 0 2px, transparent 3px) left center / 8px 8px no-repeat,
+    radial-gradient(circle, #111 0 2px, transparent 3px) center center / 8px 8px no-repeat,
+    radial-gradient(circle, #111 0 2px, transparent 3px) right center / 8px 8px no-repeat;
+}
+
+.bubbleControlIconFloat::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  top: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.52);
+  box-shadow:
+    4px -6px 0 rgba(0, 0, 0, 0.28),
+    -4px 6px 0 rgba(0, 0, 0, 0.28);
+}
+
+.bubbleControlIconDrag::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.48);
+  box-shadow:
+    0 -6px 0 -4px rgba(0, 0, 0, 0.48),
+    0 6px 0 -4px rgba(0, 0, 0, 0.48),
+    -6px 0 0 -4px rgba(0, 0, 0, 0.48),
+    6px 0 0 -4px rgba(0, 0, 0, 0.48);
+}
+
+.contentStack {
+  --stack-top: clamp(72px, 10vh, 112px);
+  --stack-release-y: 0px;
+
   position: relative;
   z-index: 1;
+  display: block;
   width: min(880px, calc(100vw - 40px));
-  margin: 0 auto clamp(64px, 12vh, 140px);
+  margin: 0 auto;
+  padding-bottom: 0;
+  transform: translate3d(0, var(--stack-release-y), 0);
+  will-change: transform;
+}
+
+.normalScrollSection {
+  position: relative;
+  z-index: 8;
+  width: min(880px, calc(100vw - 40px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: clamp(72px, 16vh, 140px) clamp(20px, 4vh, 34px);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 44%),
+    rgba(8, 8, 8, 0.78);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+
+  h2 {
+    max-width: 10ch;
+    margin: 0 0 18px;
+    font-size: clamp(40px, 7vw, 86px);
+    line-height: 0.96;
+    letter-spacing: 0;
+  }
+
+  p {
+    max-width: 62ch;
+    margin: 0;
+    color: rgba(233, 238, 247, 0.82);
+    line-height: 1.6;
+  }
+}
+
+.contentPanel {
+  position: relative;
+  position: sticky;
+  top: var(--stack-top);
+  width: 100%;
+  min-height: clamp(420px, 68vh, 680px);
+  margin: 0 0 clamp(34vh, 44vh, 420px);
   padding: clamp(20px, 4vh, 34px);
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 8px;
@@ -395,6 +569,7 @@
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(18px);
   line-height: 1.6;
+  transform-origin: top center;
 
   h2 {
     margin: 0 0 16px;
@@ -413,6 +588,41 @@
     margin: 0 0 16px;
     color: rgba(233, 238, 247, 0.82);
   }
+}
+
+.contentPanel:nth-child(1) {
+  z-index: 1;
+}
+
+.contentPanel:nth-child(2) {
+  z-index: 2;
+  top: calc(var(--stack-top) + 10px);
+}
+
+.contentPanel:nth-child(3) {
+  z-index: 3;
+  top: calc(var(--stack-top) + 20px);
+}
+
+.contentPanel:nth-child(4) {
+  z-index: 4;
+  top: calc(var(--stack-top) + 30px);
+}
+
+.contentPanel:nth-child(5) {
+  z-index: 5;
+  top: calc(var(--stack-top) + 40px);
+}
+
+.contentPanel:nth-child(6) {
+  z-index: 6;
+  top: calc(var(--stack-top) + 50px);
+  margin-bottom: clamp(24vh, 32vh, 320px);
+}
+
+.contentStackSentinel {
+  height: clamp(120px, 22vh, 260px);
+  pointer-events: none;
 }
 
 .sectionEyebrow {
